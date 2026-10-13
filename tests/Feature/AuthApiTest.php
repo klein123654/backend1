@@ -58,8 +58,8 @@ class AuthApiTest extends TestCase
             'email' => 'login@example.com',
             'password' => 'SecurePass123!',
         ])->assertOk()
-          ->assertJsonStructure(['token', 'user'])
-          ->assertJsonPath('user.email', 'login@example.com');
+            ->assertJsonStructure(['token', 'user'])
+            ->assertJsonPath('user.email', 'login@example.com');
     }
 
     public function test_login_rejects_incorrect_credentials(): void
@@ -95,5 +95,19 @@ class AuthApiTest extends TestCase
     public function test_profile_requires_authentication(): void
     {
         $this->getJson('/api/user')->assertUnauthorized();
+    }
+
+    public function test_api_preflight_returns_cors_headers_for_allowed_origin(): void
+    {
+        $response = $this->optionsJson('/api/login', [], [
+            'Origin' => 'http://localhost:5173',
+            'Access-Control-Request-Method' => 'POST',
+            'Access-Control-Request-Headers' => 'content-type',
+        ]);
+
+        $response->assertNoContent()
+            ->assertHeader('Access-Control-Allow-Origin', 'http://localhost:5173')
+            ->assertHeader('Access-Control-Allow-Methods', 'POST')
+            ->assertHeader('Access-Control-Allow-Headers', 'content-type');
     }
 }
