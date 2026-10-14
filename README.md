@@ -1,58 +1,109 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ButuanSpaces API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+This is the Laravel backend for the ButuanSpaces property marketplace. It provides the JSON API, authentication, roles, listing review flow, broker verification, and admin moderation features used by the Vue frontend.
 
-## About Laravel
+## Responsibilities
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- User authentication and role-based access
+- Property listing CRUD and moderation workflow
+- Inquiry management for buyers and property owners
+- Saved property tracking
+- Publisher applications and broker verification
+- Admin dashboards and moderation actions
+- API validation and response serialization
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Tech stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- PHP 8.3
+- Laravel 13
+- Sanctum for API auth
+- SQLite for local development
+- MySQL/PostgreSQL-ready for deployment
 
-## Learning Laravel
+## Local setup
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+1. Install dependencies
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+2. Copy and configure the environment file
 
-## Contributing
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+3. Create the local database file if needed, then run migrations
 
-## Code of Conduct
+```bash
+php artisan migrate
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+4. Start the API
 
-## Security Vulnerabilities
+```bash
+php artisan serve
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+The local API defaults to http://127.0.0.1:8000.
 
-## License
+## Key routes
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Major areas of the API include:
+
+- `/api/register`, `/api/login`, `/api/logout`, `/api/user`
+- `/api/properties` for public listing queries
+- `/api/my/properties` for owner and broker listing management
+- `/api/my/inquiries` and `/api/my/inquiries/sent`
+- `/api/admin/*` for moderation and dashboard endpoints
+- `/api/broker/verification` for broker applications
+- `/api/my/publisher-application` for role requests
+
+## First admin account
+
+Create the first administrator from the command line:
+
+```bash
+php artisan app:create-administrator
+```
+
+The command prompts for the admin name, email, and password. This is the supported creation path for the initial administrative user.
+
+## Testing
+
+Run the backend test suite:
+
+```bash
+php artisan test
+```
+
+If you are validating a specific endpoint or feature, use a filtered run:
+
+```bash
+php artisan test --filter=PropertyController
+```
+
+## Security notes
+
+- Keep `APP_DEBUG=false` in production.
+- Use Laravel validation and role checks on every protected route.
+- Do not trust client-side state for ownership or role enforcement.
+- Set `FRONTEND_URL` correctly for password-reset flows and CORS configuration.
+- Keep secrets in environment variables or deployment secrets, not in source control.
+
+## Production notes
+
+Before deployment, configure:
+
+- a production database
+- mail transport for password resets
+- durable object storage for uploaded images
+- HTTPS and strict CORS policy
+- secure environment variables and app key
+
+## See also
+
+- [../docs/PROJECT_GUIDE.md](../docs/PROJECT_GUIDE.md)
+- [../README.md](../README.md)

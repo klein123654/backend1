@@ -97,6 +97,23 @@ class AuthApiTest extends TestCase
         $this->getJson('/api/user')->assertUnauthorized();
     }
 
+    public function test_expired_bearer_token_returns_401(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('expired-test')->plainTextToken;
+        $expiration = (int) config('sanctum.expiration');
+
+        $this->assertGreaterThan(0, $expiration);
+
+        $user->tokens()->firstOrFail()->forceFill([
+            'created_at' => now()->subMinutes($expiration + 1),
+        ])->save();
+
+        $this->withToken($token)
+            ->getJson('/api/user')
+            ->assertUnauthorized();
+    }
+
     public function test_api_preflight_returns_cors_headers_for_allowed_origin(): void
     {
         $response = $this->optionsJson('/api/login', [], [

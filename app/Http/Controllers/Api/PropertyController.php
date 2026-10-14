@@ -11,6 +11,14 @@ use Illuminate\Support\Str;
 
 class PropertyController extends Controller
 {
+    private const PUBLIC_COLUMNS = [
+        'id', 'owner_id', 'broker_id', 'title', 'slug', 'property_type',
+        'listing_type', 'description', 'price', 'currency', 'address_line',
+        'barangay', 'city', 'province', 'postal_code', 'latitude', 'longitude',
+        'bedrooms', 'bathrooms', 'floor_area', 'lot_area', 'parking_spaces',
+        'status', 'published_at', 'created_at', 'updated_at',
+    ];
+
     /**
      * Public search. Only published listings with a publication timestamp
      * are visible to the public.
@@ -30,6 +38,7 @@ class PropertyController extends Controller
         ]);
 
         $query = Property::query()
+            ->select(self::PUBLIC_COLUMNS)
             ->with(['images', 'owner:id,name', 'broker:id,name'])
             ->where('status', 'published')
             ->whereNotNull('published_at');
@@ -95,6 +104,7 @@ class PropertyController extends Controller
     public function show(string $property)
     {
         $query = Property::query()
+            ->select(self::PUBLIC_COLUMNS)
             ->with(['images', 'owner:id,name', 'broker:id,name'])
             ->where('status', 'published')
             ->whereNotNull('published_at');

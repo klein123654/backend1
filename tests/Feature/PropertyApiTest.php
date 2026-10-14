@@ -17,8 +17,8 @@ class PropertyApiTest extends TestCase
     private function makeUser(string $role = 'owner'): User
     {
         return User::create([
-            'name' => 'Test ' . Str::random(8),
-            'email' => Str::uuid() . '@example.test',
+            'name' => 'Test '.Str::random(8),
+            'email' => Str::uuid().'@example.test',
             'password' => Hash::make('TestPassword123!'),
             'role' => $role,
             'account_status' => 'active',
@@ -27,7 +27,7 @@ class PropertyApiTest extends TestCase
 
     private function makeProperty(User $owner, array $attributes = []): Property
     {
-        $title = $attributes['title'] ?? 'Test listing ' . Str::random(8);
+        $title = $attributes['title'] ?? 'Test listing '.Str::random(8);
 
         return Property::create(array_merge([
             'owner_id' => $owner->id,
@@ -48,12 +48,16 @@ class PropertyApiTest extends TestCase
     public function test_public_search_returns_only_published_listings(): void
     {
         $owner = $this->makeUser();
+        $admin = $this->makeUser('admin');
 
         $this->makeProperty($owner, [
             'title' => 'Published listing',
             'slug' => 'published-listing',
             'status' => 'published',
             'published_at' => now(),
+            'reviewed_by' => $admin->id,
+            'reviewed_at' => now(),
+            'review_notes' => 'Internal approval note.',
         ]);
 
         $this->makeProperty($owner, [
@@ -66,7 +70,29 @@ class PropertyApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.title', 'Published listing');
+            ->assertJsonPath('data.0.title', 'Published listing')
+            ->assertJsonMissingPath('data.0.reviewed_by')
+            ->assertJsonMissingPath('data.0.reviewed_at')
+            ->assertJsonMissingPath('data.0.review_notes');
+    }
+
+    public function test_public_property_details_do_not_expose_administrator_review_fields(): void
+    {
+        $owner = $this->makeUser();
+        $admin = $this->makeUser('admin');
+        $property = $this->makeProperty($owner, [
+            'status' => 'published',
+            'published_at' => now(),
+            'reviewed_by' => $admin->id,
+            'reviewed_at' => now(),
+            'review_notes' => 'Internal approval note.',
+        ]);
+
+        $this->getJson('/api/properties/'.$property->id)
+            ->assertOk()
+            ->assertJsonMissingPath('data.reviewed_by')
+            ->assertJsonMissingPath('data.reviewed_at')
+            ->assertJsonMissingPath('data.review_notes');
     }
 
     public function test_public_search_can_filter_by_city_and_price(): void
@@ -105,7 +131,7 @@ class PropertyApiTest extends TestCase
         $owner = $this->makeUser();
         $property = $this->makeProperty($owner);
 
-        $this->getJson('/api/properties/' . $property->id)
+        $this->getJson('/api/properties/'.$property->id)
             ->assertNotFound();
     }
 
@@ -163,7 +189,7 @@ class PropertyApiTest extends TestCase
 
         Sanctum::actingAs($secondOwner);
 
-        $this->patchJson('/api/my/properties/' . $property->id, [
+        $this->patchJson('/api/my/properties/'.$property->id, [
             'title' => 'Unauthorized edit',
         ])->assertForbidden();
 
@@ -180,7 +206,7 @@ class PropertyApiTest extends TestCase
 
         Sanctum::actingAs($owner);
 
-        $this->patchJson('/api/my/properties/' . $property->id, [
+        $this->patchJson('/api/my/properties/'.$property->id, [
             'title' => 'Updated title',
             'status' => 'published',
             'owner_id' => 999999,
