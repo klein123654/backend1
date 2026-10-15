@@ -55,6 +55,26 @@ class AdminController extends Controller
         return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);
     }
 
+    public function unpublishListing(Request $request, Property $property): JsonResponse
+    {
+        $admin = $this->authorizeAdmin($request);
+        abort_unless($property->status === 'published', 409, 'Only published listings can be unpublished.');
+
+        $data = $request->validate([
+            'review_notes' => ['required', 'string', 'max:5000'],
+        ]);
+
+        $property->update([
+            'status' => 'draft',
+            'published_at' => null,
+            'reviewed_by' => $admin->id,
+            'reviewed_at' => now(),
+            'review_notes' => $data['review_notes'],
+        ]);
+
+        return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);
+    }
+
     public function users(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);

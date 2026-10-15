@@ -11,6 +11,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Application data is created through the authenticated workflows.
+        $this->call(ButuanCommercialPropertySeeder::class);
     }
 }

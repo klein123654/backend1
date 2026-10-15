@@ -53,6 +53,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
     Route::get('/admin/properties', [AdminController::class, 'listings']);
     Route::patch('/admin/properties/{property}', [AdminController::class, 'decideListing']);
+    Route::patch('/admin/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
     Route::get('/admin/users', [AdminController::class, 'users']);
     Route::patch('/admin/users/{user}', [AdminController::class, 'updateUser']);
     Route::get('/admin/verifications', [AdminController::class, 'verifications']);
