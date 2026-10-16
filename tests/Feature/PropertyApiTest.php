@@ -95,6 +95,22 @@ class PropertyApiTest extends TestCase
             ->assertJsonMissingPath('data.review_notes');
     }
 
+    public function test_public_property_details_include_saved_map_coordinates(): void
+    {
+        $owner = $this->makeUser();
+        $property = $this->makeProperty($owner, [
+            'status' => 'published',
+            'published_at' => now(),
+            'latitude' => 8.9475,
+            'longitude' => 125.5406,
+        ]);
+
+        $this->getJson('/api/properties/'.$property->id)
+            ->assertOk()
+            ->assertJsonPath('data.latitude', '8.9475000')
+            ->assertJsonPath('data.longitude', '125.5406000');
+    }
+
     public function test_public_search_can_filter_by_city_and_price(): void
     {
         $owner = $this->makeUser();
@@ -163,6 +179,28 @@ class PropertyApiTest extends TestCase
             'owner_id' => $owner->id,
             'status' => 'draft',
         ]);
+    }
+
+    public function test_owner_can_save_map_coordinates_with_a_listing(): void
+    {
+        $owner = $this->makeUser('owner');
+        Sanctum::actingAs($owner);
+
+        $this->postJson('/api/my/properties', [
+            'title' => 'Pinned test listing',
+            'property_type' => 'Retail Spaces',
+            'listing_type' => 'rent',
+            'description' => 'A listing with a selected map location.',
+            'price' => 25000,
+            'address_line' => 'J.C. Aquino Avenue',
+            'barangay' => 'Dagohoy Pob.',
+            'city' => 'Butuan City',
+            'province' => 'Agusan del Norte',
+            'latitude' => 8.9475,
+            'longitude' => 125.5406,
+        ])->assertCreated()
+            ->assertJsonPath('data.latitude', 8.9475)
+            ->assertJsonPath('data.longitude', 125.5406);
     }
 
     public function test_non_owner_cannot_create_a_listing(): void
