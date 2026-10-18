@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'local'),
+    'default' => env('FILESYSTEM_DISK', 'supabase'),
 
     /*
     |--------------------------------------------------------------------------
@@ -43,6 +43,19 @@ return [
             'root' => storage_path('app/public'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'supabase' => [
+            'driver' => 's3',
+            'key' => env('SUPABASE_SERVICE_ROLE_KEY'),
+            'secret' => env('SUPABASE_SERVICE_ROLE_KEY'),
+            'region' => env('SUPABASE_REGION', 'us-east-1'),
+            'bucket' => env('SUPABASE_BUCKET', 'property-images'),
+            'url' => rtrim(env('SUPABASE_URL', 'https://your-project.supabase.co'), '/').'/storage/v1/object/public/'.env('SUPABASE_BUCKET', 'property-images'),
+            'endpoint' => rtrim(env('SUPABASE_URL', 'https://your-project.supabase.co'), '/').'/storage/v1/s3',
+            'use_path_style_endpoint' => true,
             'throw' => false,
             'report' => false,
         ],

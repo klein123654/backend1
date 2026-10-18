@@ -227,7 +227,12 @@ class PropertyController extends Controller
         abort_unless(in_array($property->status, ['draft', 'rejected'], true), 409, 'Only drafts and rejected listings can be deleted.');
 
         foreach ($property->images as $image) {
-            Storage::disk('public')->delete(str_replace('/storage/', '', $image->path));
+            $disk = config('filesystems.default', 'public');
+            $relativePath = $this->relativeStoragePath($image->path);
+
+            if ($relativePath !== '') {
+                Storage::disk($disk)->delete($relativePath);
+            }
         }
         $property->delete();
 
@@ -334,16 +339,38 @@ class PropertyController extends Controller
 
     private function saveImages(Property $property, array $images): void
     {
+        $disk = config('filesystems.default', 'public');
+
         foreach ($images as $index => $image) {
-            $path = $image->store('properties', 'public');
+            $path = $image->store('properties', $disk);
+            $storedUrl = Storage::disk($disk)->url($path);
+
             PropertyImage::create([
                 'property_id' => $property->id,
-                'path' => '/storage/'.$path,
+                'path' => $storedUrl,
                 'alt_text' => $property->title,
                 'sort_order' => $index,
                 'is_primary' => $index === 0 && ! $property->images()->exists(),
             ]);
         }
+    }
+
+    private function relativeStoragePath(string $path): string
+    {
+        $parsed = parse_url($path, PHP_URL_PATH);
+
+        if ($parsed === null || $parsed === '') {
+            return '';
+        }
+
+        $bucketName = config('filesystems.disks.supabase.bucket', 'property-images');
+        $basePath = '/storage/v1/object/public/'.$bucketName.'/';
+
+        if (str_contains($parsed, '/storage/v1/object/public/')) {
+            return ltrim(str_replace($basePath, '', $parsed), '/');
+        }
+
+        return ltrim(str_replace('/storage/', '', $parsed), '/');
     }
 
     private function uniqueSlug(string $title, ?int $ignoreId = null): string
