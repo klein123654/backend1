@@ -18,6 +18,33 @@ Route::get('/run-migration', function () {
     return 'Migration run successfully!';
 });
 
+Route::get('/test-s3', function () {
+    try {
+        // Create a dummy text file
+        $content = "Testing Supabase S3 connection at " . now();
+
+        // Upload it to the 'supabase' disk
+        $path = \Storage::disk('supabase')->put('test-folder/test.txt', $content);
+
+        // Get the URL
+        $url = \Storage::disk('supabase')->url($path);
+
+        return response()->json([
+            'success' => true,
+            'path' => $path,
+            'url' => $url,
+            'message' => 'Check your Supabase bucket!'
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ], 500);
+    }
+});
+
 Route::post('/register', [AuthController::class, 'register'])
     ->middleware('throttle:10,1');
 
