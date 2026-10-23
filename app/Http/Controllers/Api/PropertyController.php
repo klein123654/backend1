@@ -378,8 +378,13 @@ class PropertyController extends Controller
 
         foreach ($images as $index => $image) {
             try {
-                $path = Storage::disk($disk)->putFile('properties', $image, [
-                    'mimetype' => $image->getMimeType(),
+                // Generate a unique file name to prevent overwriting
+                $filename = Str::random(20) . '.' . $image->getClientOriginalExtension();
+
+                // Upload the file with the exact MIME type from the browser
+                $path = Storage::disk($disk)->putFileAs('properties', $image, $filename, [
+                    'mimetype' => $image->getClientMimeType(),
+                    'visibility' => 'public',
                 ]);
 
                 if (! is_string($path)) {
