@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
+use App\Services\DeepSeekService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -16,7 +18,7 @@ class PropertyController extends Controller
         'listing_type', 'description', 'price', 'currency', 'address_line',
         'barangay', 'city', 'province', 'postal_code', 'latitude', 'longitude',
         'bedrooms', 'bathrooms', 'floor_area', 'lot_area', 'parking_spaces',
-        'status', 'published_at', 'created_at', 'updated_at',
+        'status', 'published_at', 'created_at', 'updated_at', 'ai_tags',
     ];
 
     /**
@@ -34,6 +36,8 @@ class PropertyController extends Controller
             'min_price' => ['sometimes', 'numeric', 'min:0'],
             'max_price' => ['sometimes', 'numeric', 'min:0'],
             'bedrooms' => ['sometimes', 'integer', 'min:0', 'max:65535'],
+            'ai_tags' => ['sometimes', 'array', 'max:6'],
+            'ai_tags.*' => ['string', 'max:40'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
@@ -78,6 +82,14 @@ class PropertyController extends Controller
 
         if (isset($filters['bedrooms'])) {
             $query->where('bedrooms', '>=', $filters['bedrooms']);
+        }
+
+        if (! empty($filters['ai_tags'])) {
+            $query->where(function ($tagQuery) use ($filters): void {
+                foreach ($filters['ai_tags'] as $tag) {
+                    $tagQuery->orWhereJsonContains('ai_tags', $tag);
+                }
+            });
         }
 
         $perPage = (int) ($filters['per_page'] ?? 12);
@@ -151,7 +163,7 @@ class PropertyController extends Controller
     /**
      * Create a draft. Clients cannot choose an owner, broker, or status.
      */
-    public function store(Request $request)
+    public function store(Request $request, DeepSeekService $deepSeek)
     {
         $this->ensureActiveOwner($request);
 
@@ -160,18 +172,34 @@ class PropertyController extends Controller
         $submitForReview = (bool) ($data['submit_for_review'] ?? false);
         unset($data['images'], $data['submit_for_review']);
 
-        $property = Property::create(array_merge($data, [
-            'owner_id' => $request->user()->id,
-            'broker_id' => $request->user()->role === 'broker' ? $request->user()->id : null,
-            'slug' => $this->uniqueSlug($data['title']),
-            'status' => $submitForReview ? 'pending' : 'draft',
-            'published_at' => null,
-        ]));
-        $this->saveImages($property, $images);
+        $property = DB::transaction(function () use ($request, $data, $images, $submitForReview) {
+            $property = Property::create(array_merge($data, [
+                'owner_id' => $request->user()->id,
+                'broker_id' => $request->user()->role === 'broker' ? $request->user()->id : null,
+                'slug' => $this->uniqueSlug($data['title']),
+                'status' => $submitForReview ? 'pending' : 'draft',
+                'published_at' => null,
+            ]));
+
+            if (! empty($images)) {
+                $this->saveImages($property, $images);
+            }
+
+            return $property;
+        });
+
+        try {
+            $tagResult = $deepSeek->tagProperty($property->title, $property->description);
+            if ($tagResult['success'] && ! empty($tagResult['tags'])) {
+                $property->forceFill(['ai_tags' => $tagResult['tags']])->save();
+            }
+        } catch (\Throwable) {
+            // Tagging is optional and must not prevent property creation.
+        }
 
         return response()->json([
-            'message' => 'Property saved as a draft.',
-            'data' => $property->load('images'),
+            'message' => $submitForReview ? 'Property submitted for review.' : 'Property saved as a draft.',
+            'data' => $property->fresh()->load('images'),
         ], 201);
     }
 
@@ -204,15 +232,22 @@ class PropertyController extends Controller
             );
         }
 
-        $property->fill($data);
-        if ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
-            $property->status = 'pending';
-            $property->reviewed_by = null;
-            $property->reviewed_at = null;
-            $property->review_notes = null;
-        }
-        $property->save();
-        $this->saveImages($property, $images);
+        $property = DB::transaction(function () use ($property, $data, $images, $submitForReview) {
+            $property->fill($data);
+            if ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
+                $property->status = 'pending';
+                $property->reviewed_by = null;
+                $property->reviewed_at = null;
+                $property->review_notes = null;
+            }
+            $property->save();
+
+            if (! empty($images)) {
+                $this->saveImages($property, $images);
+            }
+
+            return $property;
+        });
 
         return response()->json([
             'message' => 'Property updated.',
@@ -342,16 +377,31 @@ class PropertyController extends Controller
         $disk = config('filesystems.default', 'public');
 
         foreach ($images as $index => $image) {
-            $path = $image->store('properties', $disk);
-            $storedUrl = Storage::disk($disk)->url($path);
+            try {
+                $path = Storage::disk($disk)->putFile('properties', $image, [
+                    'mimetype' => $image->getMimeType(),
+                ]);
 
-            PropertyImage::create([
-                'property_id' => $property->id,
-                'path' => $storedUrl,
-                'alt_text' => $property->title,
-                'sort_order' => $index,
-                'is_primary' => $index === 0 && ! $property->images()->exists(),
-            ]);
+                if (! is_string($path)) {
+                    throw new \RuntimeException('Image upload did not return a storage path.');
+                }
+
+                $storedUrl = Storage::disk($disk)->url($path);
+
+                PropertyImage::create([
+                    'property_id' => $property->id,
+                    'path' => $storedUrl,
+                    'alt_text' => $property->title,
+                    'sort_order' => $index,
+                    'is_primary' => $index === 0 && ! $property->images()->exists(),
+                ]);
+            } catch (\Throwable $exception) {
+                throw new \RuntimeException(
+                    'Image upload failed. Please check the storage bucket, credentials, and permissions before trying again.',
+                    0,
+                    $exception
+                );
+            }
         }
     }
 

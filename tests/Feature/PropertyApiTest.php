@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Property;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -74,6 +76,31 @@ class PropertyApiTest extends TestCase
             ->assertJsonMissingPath('data.0.reviewed_by')
             ->assertJsonMissingPath('data.0.reviewed_at')
             ->assertJsonMissingPath('data.0.review_notes');
+    }
+
+    public function test_public_search_filters_published_listings_by_ai_tags(): void
+    {
+        $owner = $this->makeUser();
+        $taggedProperty = $this->makeProperty($owner, [
+            'title' => 'Port-side warehouse',
+            'slug' => 'port-side-warehouse',
+            'status' => 'published',
+            'published_at' => now(),
+            'ai_tags' => ['near port', 'high-ceiling'],
+        ]);
+        $this->makeProperty($owner, [
+            'title' => 'Retail storefront',
+            'slug' => 'retail-storefront',
+            'status' => 'published',
+            'published_at' => now(),
+            'ai_tags' => ['corner lot'],
+        ]);
+
+        $this->getJson('/api/properties?ai_tags%5B%5D=near%20port')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $taggedProperty->id)
+            ->assertJsonPath('data.0.ai_tags', ['near port', 'high-ceiling']);
     }
 
     public function test_public_property_details_do_not_expose_administrator_review_fields(): void
@@ -179,6 +206,69 @@ class PropertyApiTest extends TestCase
             'owner_id' => $owner->id,
             'status' => 'draft',
         ]);
+    }
+
+    public function test_owner_can_create_a_property_when_ai_tagging_is_unavailable(): void
+    {
+        config(['services.deepseek.api_key' => null]);
+        $owner = $this->makeUser('owner');
+        Sanctum::actingAs($owner);
+
+        $this->postJson('/api/my/properties', [
+            'title' => 'Untagged commercial space',
+            'property_type' => 'Warehouses',
+            'listing_type' => 'rent',
+            'description' => 'Commercial warehouse space for business use.',
+            'price' => 50000,
+            'address_line' => 'J.C. Aquino Avenue',
+            'city' => 'Butuan City',
+            'province' => 'Agusan del Norte',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.title', 'Untagged commercial space')
+            ->assertJsonPath('data.ai_tags', []);
+
+        $this->assertDatabaseHas('properties', [
+            'title' => 'Untagged commercial space',
+            'ai_tags' => '[]',
+        ]);
+    }
+
+    public function test_property_image_upload_uses_a_bucket_relative_path_and_preserves_mime_type(): void
+    {
+        config(['services.deepseek.api_key' => null]);
+        config(['filesystems.default' => 'supabase']);
+        Storage::fake('supabase');
+        $owner = $this->makeUser('owner');
+        Sanctum::actingAs($owner);
+
+        $response = $this->post('/api/my/properties', [
+            'title' => 'Image Upload Test Property',
+            'property_type' => 'Warehouses',
+            'listing_type' => 'rent',
+            'description' => 'A commercial warehouse listing for image upload verification.',
+            'price' => 50000,
+            'address_line' => 'J.C. Aquino Avenue',
+            'city' => 'Butuan City',
+            'province' => 'Agusan del Norte',
+            'images' => [UploadedFile::fake()->createWithContent(
+                'warehouse.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='),
+            )],
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated();
+        $imagePath = $response->json('data.images.0.path');
+        $objectPath = parse_url($imagePath, PHP_URL_PATH);
+
+        $this->assertIsString($objectPath);
+        $this->assertStringContainsString('/properties/', $objectPath);
+        $this->assertStringNotContainsString('/property-images/property-images/', $objectPath);
+
+        $storagePath = basename($objectPath);
+        $storedPath = 'properties/'.$storagePath;
+        Storage::disk('supabase')->assertExists($storedPath);
+        $this->assertSame('image/png', Storage::disk('supabase')->mimeType($storedPath));
     }
 
     public function test_owner_can_save_map_coordinates_with_a_listing(): void

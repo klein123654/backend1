@@ -14,6 +14,7 @@ class Inquiry extends Model
     protected $fillable = [
         'property_id', 'buyer_id', 'assigned_broker_id',
         'name', 'email', 'phone', 'message', 'status',
+        'ai_summary', 'ai_priority',
     ];
 
     public function property(): BelongsTo

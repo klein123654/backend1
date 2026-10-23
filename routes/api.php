@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AiSearchController;
+use App\Http\Controllers\Api\AiDescriptionController;
+use App\Http\Controllers\Api\MarketInsightController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InquiryController;
 use App\Http\Controllers\Api\PropertyController;
@@ -38,6 +41,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::get('/properties', [PropertyController::class, 'index']);
 Route::get('/properties/{property}', [PropertyController::class, 'show']);
+Route::post('/ai/search', AiSearchController::class)
+    ->middleware('throttle:ai-search');
+Route::post('/ai/describe', AiDescriptionController::class)
+    ->middleware('throttle:ai-search');
+Route::get('/ai/market-insight', MarketInsightController::class)
+    ->middleware('throttle:ai-search');
 Route::post('/properties/{property}/inquiries', [InquiryController::class, 'store'])
     ->middleware(['auth:sanctum', 'throttle:10,1']);
 Route::post('/properties/{property}/reports', [ReportController::class, 'store'])

@@ -18,11 +18,16 @@ class Property extends Model
         'latitude', 'longitude', 'bedrooms', 'bathrooms', 'floor_area',
         'lot_area', 'parking_spaces', 'published_at',
         'reviewed_by', 'reviewed_at', 'review_notes',
+        'ai_tags',
     ];
 
     protected function casts(): array
     {
-        return ['published_at' => 'datetime', 'reviewed_at' => 'datetime'];
+        return [
+            'published_at' => 'datetime',
+            'reviewed_at' => 'datetime',
+            'ai_tags' => 'array',
+        ];
     }
 
     public function owner(): BelongsTo

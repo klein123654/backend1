@@ -5,12 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Inquiry;
 use App\Models\Property;
+use App\Services\DeepSeekService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class InquiryController extends Controller
 {
-    public function store(Request $request, Property $property): JsonResponse
+    public function store(Request $request, Property $property, DeepSeekService $deepSeek): JsonResponse
     {
         abort_unless(
             $request->user() &&
@@ -34,7 +35,22 @@ class InquiryController extends Controller
             'buyer_id' => $request->user()->id,
             'assigned_broker_id' => $property->broker_id,
             'status' => 'new',
+            'ai_summary' => null,
+            'ai_priority' => 'unscored',
         ]);
+
+        try {
+            $score = $deepSeek->scoreInquiry($inquiry->message);
+
+            if ($score['success']) {
+                $inquiry->forceFill([
+                    'ai_summary' => $score['summary'],
+                    'ai_priority' => $score['priority'],
+                ])->save();
+            }
+        } catch (\Throwable) {
+            // AI scoring is optional and must not prevent inquiry creation.
+        }
 
         return response()->json(['data' => $inquiry->load('property:id,title,owner_id,broker_id')], 201);
     }
