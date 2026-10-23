@@ -13,6 +13,11 @@ use App\Http\Controllers\Api\SavedPropertyController;
 use App\Http\Controllers\Api\VerificationController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/run-migration', function () {
+    \Artisan::call('migrate', ['--force' => true]);
+    return 'Migration run successfully!';
+});
+
 Route::post('/register', [AuthController::class, 'register'])
     ->middleware('throttle:10,1');
 
