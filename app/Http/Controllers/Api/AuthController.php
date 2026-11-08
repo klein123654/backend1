@@ -84,6 +84,8 @@ class AuthController extends Controller
 
     public function user(Request $request): JsonResponse
     {
+        abort_unless($request->user()->account_status === 'active', 403, 'Account suspended.');
+
         return response()->json([
             'user' => $this->userData($request->user()),
         ]);
@@ -91,6 +93,8 @@ class AuthController extends Controller
 
     public function updateProfile(Request $request): JsonResponse
     {
+        abort_unless($request->user()->account_status === 'active', 403, 'Account suspended.');
+
         $data = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:30'],

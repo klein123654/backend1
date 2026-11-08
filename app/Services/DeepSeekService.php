@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Closure;
+use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use Throwable;
 
@@ -24,7 +25,8 @@ class DeepSeekService
 
         try {
             $response = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
@@ -48,10 +50,17 @@ class DeepSeekService
             }
 
             return ['success' => true, 'summary' => $summary];
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            Log::error('DeepSeek API call failed', [
+                'feature' => 'insight',
+                'status' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'model' => config('services.deepseek.model'),
+            ]);
+
             return [
                 'success' => false,
-                'message' => 'AI market insights are temporarily unavailable.',
+                'message' => 'AI service error. Please try again.',
                 'summary' => null,
             ];
         }
@@ -73,7 +82,8 @@ class DeepSeekService
 
         try {
             $response = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
@@ -124,10 +134,17 @@ class DeepSeekService
                 'summary' => $summary,
                 'priority' => $priority,
             ];
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            Log::error('DeepSeek API call failed', [
+                'feature' => 'score',
+                'status' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'model' => config('services.deepseek.model'),
+            ]);
+
             return [
                 'success' => false,
-                'message' => 'AI inquiry scoring is temporarily unavailable.',
+                'message' => 'AI service error. Please try again.',
                 'summary' => null,
                 'priority' => 'unscored',
             ];
@@ -149,7 +166,8 @@ class DeepSeekService
 
         try {
             $response = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
@@ -205,8 +223,15 @@ class DeepSeekService
             }
 
             return ['success' => true, 'tags' => array_slice($tags, 0, 6)];
-        } catch (Throwable) {
-            return ['success' => false, 'message' => 'AI property tagging is temporarily unavailable.', 'tags' => []];
+        } catch (Throwable $e) {
+            Log::error('DeepSeek API call failed', [
+                'feature' => 'tag',
+                'status' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'model' => config('services.deepseek.model'),
+            ]);
+
+            return ['success' => false, 'message' => 'AI service error. Please try again.', 'tags' => []];
         }
     }
 
@@ -222,7 +247,8 @@ class DeepSeekService
 
         try {
             $response = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
@@ -242,8 +268,15 @@ class DeepSeekService
             }
 
             return ['success' => true, 'description' => $description];
-        } catch (Throwable) {
-            return ['success' => false, 'message' => 'AI description generation is temporarily unavailable. Please try again shortly.'];
+        } catch (Throwable $e) {
+            Log::error('DeepSeek API call failed', [
+                'feature' => 'describe',
+                'status' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'model' => config('services.deepseek.model'),
+            ]);
+
+            return ['success' => false, 'message' => 'AI service error. Please try again.'];
         }
     }
 
@@ -259,11 +292,12 @@ class DeepSeekService
 
         try {
             $toolResponse = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Extract property search filters from the user query. Use only the searchProperties tool.',
+                        'content' => 'Extract property search filters from the user query. Use only the searchProperties tool. The supported property_type values are Office Spaces, Retail Spaces, Warehouses, and Commercial Lots. Set property_type to an empty string when the user asks generically for a commercial space or does not identify one of those specific types; do not use the generic word "commercial" as a property_type filter.',
                     ],
                     ['role' => 'user', 'content' => $query],
                 ],
@@ -281,7 +315,7 @@ class DeepSeekService
                                 ],
                                 'property_type' => [
                                     'type' => 'string',
-                                    'description' => 'Commercial property type to search; empty when unspecified.',
+                                    'description' => 'One supported value: Office Spaces, Retail Spaces, Warehouses, or Commercial Lots. Empty for generic commercial requests or when unspecified.',
                                 ],
                                 'max_price' => [
                                     'type' => 'number',
@@ -315,7 +349,8 @@ class DeepSeekService
             $listings = $findProperties($filters);
 
             $summaryResponse = OpenAI::chat()->create([
-                'model' => 'deepseek-flash',
+                'model' => config('services.deepseek.model', 'deepseek-flash'),
+                'thinking' => ['type' => 'disabled'],
                 'messages' => [
                     [
                         'role' => 'system',
@@ -347,8 +382,15 @@ class DeepSeekService
                 'summary' => $summaryResponse->choices[0]->message->content ?? 'Here are the matching commercial listings.',
                 'listings' => $listings,
             ];
-        } catch (Throwable) {
-            return ['success' => false, 'message' => 'AI property search is temporarily unavailable. Please try again shortly.'];
+        } catch (Throwable $e) {
+            Log::error('DeepSeek API call failed', [
+                'feature' => 'search',
+                'status' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'model' => config('services.deepseek.model'),
+            ]);
+
+            return ['success' => false, 'message' => 'AI service error. Please try again.'];
         }
     }
 }

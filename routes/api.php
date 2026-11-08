@@ -1,49 +1,17 @@
 <?php
 
 use App\Http\Controllers\Api\AdminController;
-use App\Http\Controllers\Api\AiSearchController;
 use App\Http\Controllers\Api\AiDescriptionController;
-use App\Http\Controllers\Api\MarketInsightController;
+use App\Http\Controllers\Api\AiSearchController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InquiryController;
+use App\Http\Controllers\Api\MarketInsightController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PublisherApplicationController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SavedPropertyController;
 use App\Http\Controllers\Api\VerificationController;
 use Illuminate\Support\Facades\Route;
-
-Route::get('/run-migration', function () {
-    \Artisan::call('migrate', ['--force' => true]);
-    return 'Migration run successfully!';
-});
-
-Route::get('/test-s3', function () {
-    try {
-        // Create a dummy text file
-        $content = "Testing Supabase S3 connection at " . now();
-
-        // Upload it to the 'supabase' disk
-        $path = \Storage::disk('supabase')->put('test-folder/test.txt', $content);
-
-        // Get the URL
-        $url = \Storage::disk('supabase')->url($path);
-
-        return response()->json([
-            'success' => true,
-            'path' => $path,
-            'url' => $url,
-            'message' => 'Check your Supabase bucket!'
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'success' => false,
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ], 500);
-    }
-});
 
 Route::post('/register', [AuthController::class, 'register'])
     ->middleware('throttle:10,1');
@@ -61,6 +29,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/my/inquiries', [InquiryController::class, 'mine']);
     Route::get('/my/inquiries/sent', [InquiryController::class, 'sent']);
+    Route::get('/inquiries/{inquiry}/messages', [InquiryController::class, 'messages']);
+    Route::post('/inquiries/{inquiry}/messages', [InquiryController::class, 'storeMessage']);
     Route::get('/my/saved-properties', [SavedPropertyController::class, 'index']);
     Route::post('/my/saved-properties/{property}', [SavedPropertyController::class, 'store']);
     Route::delete('/my/saved-properties/{property}', [SavedPropertyController::class, 'destroy']);
