@@ -7,6 +7,8 @@ use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Services\DeepSeekService;
 use App\Services\PropertyImageStorage;
+use App\Support\PublisherProfile;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -42,13 +44,14 @@ class PropertyController extends Controller
             'ai_tags.*' => ['string', 'max:40'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'sort' => ['sometimes', 'string', 'in:newest,oldest,price_asc,price_desc'],
+            'barangay' => ['sometimes', 'string', 'max:120'],
+            'publisher' => ['sometimes', 'integer', 'min:1'],
         ]);
 
         $query = Property::query()
             ->select(self::PUBLIC_COLUMNS)
-            ->with(['images', 'owner:id,name', 'broker:id,name'])
-            ->where('status', 'published')
-            ->whereNotNull('published_at');
+            ->with(['images', 'broker:id,name', ...PublisherProfile::eagerLoads()])
+            ->publiclyVisible();
 
         if (! empty($filters['search'])) {
             $term = '%'.strtolower($filters['search']).'%';
@@ -73,6 +76,14 @@ class PropertyController extends Controller
                     $query->where($field, $filters[$field]);
                 }
             }
+        }
+
+        if (! empty($filters['barangay'])) {
+            $query->whereRaw('LOWER(barangay) = ?', [strtolower(trim($filters['barangay']))]);
+        }
+
+        if (isset($filters['publisher'])) {
+            $query->where('owner_id', $filters['publisher']);
         }
 
         if (isset($filters['min_price'])) {
@@ -107,7 +118,7 @@ class PropertyController extends Controller
         $properties = $query->paginate($perPage);
 
         return response()->json([
-            'data' => $properties->items(),
+            'data' => array_map($this->withPublisher(...), $properties->items()),
             'meta' => [
                 'current_page' => $properties->currentPage(),
                 'last_page' => $properties->lastPage(),
@@ -124,9 +135,8 @@ class PropertyController extends Controller
     {
         $query = Property::query()
             ->select(self::PUBLIC_COLUMNS)
-            ->with(['images', 'owner:id,name', 'broker:id,name'])
-            ->where('status', 'published')
-            ->whereNotNull('published_at');
+            ->with(['images', 'broker:id,name', ...PublisherProfile::eagerLoads()])
+            ->publiclyVisible();
 
         if (ctype_digit($property)) {
             $query->where('id', (int) $property);
@@ -135,7 +145,52 @@ class PropertyController extends Controller
         }
 
         return response()->json([
-            'data' => $query->firstOrFail(),
+            'data' => $this->withPublisher($query->firstOrFail()),
+        ]);
+    }
+
+    /**
+     * Number of publicly visible listings per barangay, for the home page.
+     */
+    public function barangays(): JsonResponse
+    {
+        $counts = Property::query()
+            ->publiclyVisible()
+            ->whereNotNull('barangay')
+            ->where('barangay', '!=', '')
+            ->selectRaw('barangay, COUNT(*) AS listing_count')
+            ->groupBy('barangay')
+            ->orderByDesc('listing_count')
+            ->orderBy('barangay')
+            ->get()
+            ->map(fn (Property $row): array => [
+                'barangay' => $row->barangay,
+                'listing_count' => (int) $row->getAttribute('listing_count'),
+            ]);
+
+        return response()->json(['data' => $counts]);
+    }
+
+    /**
+     * Mark a listing as still available, rented or sold. Rented and sold
+     * listings are hidden from the public; confirming resets the reminder clock.
+     */
+    public function updateAvailability(Request $request, Property $property): JsonResponse
+    {
+        Gate::authorize('update', $property);
+
+        $data = $request->validate([
+            'availability' => ['required', 'in:'.implode(',', Property::AVAILABILITY_OPTIONS)],
+        ]);
+
+        $property->markAvailabilityConfirmed($data['availability']);
+        $property->save();
+
+        return response()->json([
+            'message' => $data['availability'] === 'available'
+                ? 'Thanks! The listing is marked as still available.'
+                : 'The listing is marked as '.$data['availability'].' and hidden from the public.',
+            'data' => $property->fresh()->load('images'),
         ]);
     }
 
@@ -237,6 +292,7 @@ class PropertyController extends Controller
             $property->fill($data);
             $isEditingSubmittedListing = in_array($property->status, ['pending', 'published'], true)
                 && ($property->isDirty() || ! empty($images));
+            $property->markAvailabilityConfirmed($property->availability ?? 'available');
 
             if ($isEditingSubmittedListing) {
                 // Changes to a live or submitted listing must be re-approved, so
@@ -280,6 +336,19 @@ class PropertyController extends Controller
         $imageStorage->deleteListing($property);
 
         return response()->json(['message' => 'Listing deleted.']);
+    }
+
+    /**
+     * Attach the publisher's public profile and drop the raw owner relation.
+     */
+    private function withPublisher(Property $property): Property
+    {
+        if ($property->owner) {
+            $property->setAttribute('publisher', PublisherProfile::make($property->owner));
+            $property->owner->setRelations([])->setHidden(['role', 'created_at', 'contact_phone', 'contact_email', 'messenger_username', 'viber_number']);
+        }
+
+        return $property;
     }
 
     private function propertyRules(bool $partial = false): array

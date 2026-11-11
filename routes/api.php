@@ -8,9 +8,11 @@ use App\Http\Controllers\Api\InquiryController;
 use App\Http\Controllers\Api\MarketInsightController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PublisherApplicationController;
+use App\Http\Controllers\Api\PublisherController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SavedPropertyController;
 use App\Http\Controllers\Api\VerificationController;
+use App\Http\Controllers\ListingAvailabilityController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register'])
@@ -41,6 +43,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/publisher-application', [PublisherApplicationController::class, 'store']);
 });
 
+Route::post('/internal/availability-reminders', [ListingAvailabilityController::class, 'sendReminders'])
+    ->middleware('throttle:5,1');
+Route::get('/barangays', [PropertyController::class, 'barangays']);
+Route::get('/publishers/{user}', [PublisherController::class, 'show']);
 Route::get('/properties', [PropertyController::class, 'index']);
 Route::get('/properties/{property}', [PropertyController::class, 'show']);
 Route::post('/ai/search', AiSearchController::class)
@@ -61,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/properties', [PropertyController::class, 'store']);
     Route::patch('/my/properties/{property}', [PropertyController::class, 'update']);
     Route::delete('/my/properties/{property}', [PropertyController::class, 'destroy']);
+    Route::patch('/my/properties/{property}/availability', [PropertyController::class, 'updateAvailability']);
 });
 
 Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(function () {

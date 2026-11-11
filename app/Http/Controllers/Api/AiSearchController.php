@@ -28,8 +28,7 @@ class AiSearchController extends Controller
                     'status', 'published_at', 'created_at', 'updated_at',
                 ])
                 ->with(['images', 'owner:id,name', 'broker:id,name'])
-                ->where('status', 'published')
-                ->whereNotNull('published_at');
+                ->publiclyVisible();
 
             $location = is_string($filters['location'] ?? null)
                 ? trim($filters['location'])

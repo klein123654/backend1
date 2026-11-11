@@ -1,0 +1,28 @@
+name: Listing availability reminders
+
+# Render's free tier has no cron, so this workflow triggers the daily
+# "is this listing still available?" emails through the API.
+# Setup: set the same random value as CRON_SECRET on Render and as the
+# CRON_SECRET repository secret here. Without it, the job is skipped.
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 08:00 Philippine time
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          API_URL: ${{ vars.BACKEND_API_URL || 'https://backend1-3fwi.onrender.com/api' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET is not set; skipping."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 120 --retry 2 \
+            -X POST -H "Accept: application/json" -H "X-Cron-Secret: $CRON_SECRET" \
+            "$API_URL/internal/availability-reminders"

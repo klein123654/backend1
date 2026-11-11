@@ -25,7 +25,7 @@ class InquiryController extends Controller
             403,
             'Sign in with an active member account to send an inquiry.'
         );
-        abort_unless($property->status === 'published' && $property->published_at, 404);
+        abort_unless($property->isPubliclyVisible(), 404);
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],

@@ -48,6 +48,9 @@ class AdminController extends Controller
         ]);
         $property->status = $data['status'];
         $property->published_at = $data['status'] === 'published' ? now() : null;
+        if ($data['status'] === 'published') {
+            $property->markAvailabilityConfirmed();
+        }
         $property->reviewed_by = $admin->id;
         $property->reviewed_at = now();
         $property->review_notes = $data['review_notes'] ?? null;

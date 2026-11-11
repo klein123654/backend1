@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'phone', 'role', 'account_status'])]
+#[Fillable(['name', 'email', 'password', 'phone', 'role', 'account_status', 'contact_phone', 'contact_email', 'messenger_username', 'viber_number'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -30,6 +30,11 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function isPublisher(): bool
+    {
+        return in_array($this->role, ['owner', 'developer', 'broker'], true);
     }
 
     public function ownedProperties(): HasMany
