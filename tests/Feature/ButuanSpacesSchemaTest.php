@@ -29,7 +29,7 @@ class ButuanSpacesSchemaTest extends TestCase
 
     public function test_user_relationships_are_configured(): void
     {
-        $user = new User();
+        $user = new User;
 
         $this->assertInstanceOf(HasMany::class, $user->ownedProperties());
         $this->assertInstanceOf(HasMany::class, $user->brokerProperties());
