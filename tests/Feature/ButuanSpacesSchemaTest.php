@@ -4,11 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class ButuanSpacesSchemaTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_butuanspaces_tables_and_user_fields_exist(): void
     {
         foreach ([

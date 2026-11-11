@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class AdminAuthorizationTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_buyer_receives_403_from_admin_dashboard(): void
     {
         Sanctum::actingAs(User::factory()->create([
