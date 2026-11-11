@@ -10,8 +10,10 @@ use App\Models\PropertyReport;
 use App\Models\PublisherApplication;
 use App\Models\User;
 use App\Notifications\BrokerVerificationReviewed;
+use App\Notifications\ListingRemoved;
 use App\Notifications\ListingReviewed;
 use App\Notifications\PublisherApplicationReviewed;
+use App\Services\PropertyImageStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -80,6 +82,27 @@ class AdminController extends Controller
         }
 
         return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);
+    }
+
+    /**
+     * Permanently delete any listing, e.g. spam or test data. The owner is emailed.
+     */
+    public function deleteListing(Request $request, Property $property, PropertyImageStorage $imageStorage): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $owner = $property->owner;
+        $title = $property->title;
+
+        $imageStorage->deleteListing($property);
+
+        if ($owner) {
+            $this->notifySafely($owner, new ListingRemoved($title, $data['reason'] ?? null));
+        }
+
+        return response()->json(['message' => 'Listing deleted.']);
     }
 
     public function users(Request $request): JsonResponse

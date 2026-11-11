@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Services\DeepSeekService;
+use App\Services\PropertyImageStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -210,8 +211,8 @@ class PropertyController extends Controller
     }
 
     /**
-     * Update only a property belonging to the authenticated owner.
-     * Publication status cannot be changed through this endpoint.
+     * Update a property belonging to the authenticated owner. Editing a pending
+     * or published listing sends it back to administrator review.
      */
     public function update(Request $request, Property $property)
     {
@@ -234,7 +235,18 @@ class PropertyController extends Controller
 
         $property = DB::transaction(function () use ($property, $data, $images, $submitForReview) {
             $property->fill($data);
-            if ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
+            $isEditingSubmittedListing = in_array($property->status, ['pending', 'published'], true)
+                && ($property->isDirty() || ! empty($images));
+
+            if ($isEditingSubmittedListing) {
+                // Changes to a live or submitted listing must be re-approved, so
+                // the listing is hidden from the public until an admin reviews it.
+                $property->status = 'pending';
+                $property->published_at = null;
+                $property->reviewed_by = null;
+                $property->reviewed_at = null;
+                $property->review_notes = null;
+            } elseif ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
                 $property->status = 'pending';
                 $property->reviewed_by = null;
                 $property->reviewed_at = null;
@@ -250,25 +262,22 @@ class PropertyController extends Controller
         });
 
         return response()->json([
-            'message' => 'Property updated.',
+            'message' => $property->status === 'pending'
+                ? 'Property updated and sent to an administrator for review.'
+                : 'Property updated.',
             'data' => $property->fresh()->load('images'),
         ]);
     }
 
-    public function destroy(Request $request, Property $property)
+    /**
+     * Owners may delete their own listings at any status. Inquiries, reports
+     * and saved entries for the listing are removed by cascading foreign keys.
+     */
+    public function destroy(Property $property, PropertyImageStorage $imageStorage)
     {
         Gate::authorize('delete', $property);
-        abort_unless(in_array($property->status, ['draft', 'rejected'], true), 409, 'Only drafts and rejected listings can be deleted.');
 
-        foreach ($property->images as $image) {
-            $disk = config('filesystems.default', 'public');
-            $relativePath = $this->relativeStoragePath($image->path);
-
-            if ($relativePath !== '') {
-                Storage::disk($disk)->delete($relativePath);
-            }
-        }
-        $property->delete();
+        $imageStorage->deleteListing($property);
 
         return response()->json(['message' => 'Listing deleted.']);
     }
@@ -383,24 +392,6 @@ class PropertyController extends Controller
                 );
             }
         }
-    }
-
-    private function relativeStoragePath(string $path): string
-    {
-        $parsed = parse_url($path, PHP_URL_PATH);
-
-        if ($parsed === null || $parsed === '') {
-            return '';
-        }
-
-        $bucketName = config('filesystems.disks.supabase.bucket', 'property-images');
-        $basePath = '/storage/v1/object/public/'.$bucketName.'/';
-
-        if (str_contains($parsed, '/storage/v1/object/public/')) {
-            return ltrim(str_replace($basePath, '', $parsed), '/');
-        }
-
-        return ltrim(str_replace('/storage/', '', $parsed), '/');
     }
 
     private function uniqueSlug(string $title, ?int $ignoreId = null): string

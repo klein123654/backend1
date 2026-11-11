@@ -68,6 +68,7 @@ Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(
     Route::get('/properties', [AdminController::class, 'listings']);
     Route::patch('/properties/{property}', [AdminController::class, 'decideListing']);
     Route::patch('/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
+    Route::delete('/properties/{property}', [AdminController::class, 'deleteListing']);
     Route::get('/users', [AdminController::class, 'users']);
     Route::patch('/users/{user}', [AdminController::class, 'updateUser']);
     Route::get('/verifications', [AdminController::class, 'verifications']);
