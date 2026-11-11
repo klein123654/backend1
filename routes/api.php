@@ -61,17 +61,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/properties', [PropertyController::class, 'store']);
     Route::patch('/my/properties/{property}', [PropertyController::class, 'update']);
     Route::delete('/my/properties/{property}', [PropertyController::class, 'destroy']);
-    Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
-    Route::get('/admin/properties', [AdminController::class, 'listings']);
-    Route::patch('/admin/properties/{property}', [AdminController::class, 'decideListing']);
-    Route::patch('/admin/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
-    Route::get('/admin/users', [AdminController::class, 'users']);
-    Route::patch('/admin/users/{user}', [AdminController::class, 'updateUser']);
-    Route::get('/admin/verifications', [AdminController::class, 'verifications']);
-    Route::patch('/admin/verifications/{verification}', [AdminController::class, 'decideVerification']);
-    Route::get('/admin/publisher-applications', [AdminController::class, 'publisherApplications']);
-    Route::patch('/admin/publisher-applications/{application}', [AdminController::class, 'decidePublisherApplication']);
-    Route::get('/admin/inquiries', [AdminController::class, 'inquiries']);
-    Route::get('/admin/reports', [AdminController::class, 'reports']);
-    Route::patch('/admin/reports/{report}', [AdminController::class, 'updateReport']);
+});
+
+Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(function () {
+    Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    Route::get('/properties', [AdminController::class, 'listings']);
+    Route::patch('/properties/{property}', [AdminController::class, 'decideListing']);
+    Route::patch('/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
+    Route::get('/users', [AdminController::class, 'users']);
+    Route::patch('/users/{user}', [AdminController::class, 'updateUser']);
+    Route::get('/verifications', [AdminController::class, 'verifications']);
+    Route::patch('/verifications/{verification}', [AdminController::class, 'decideVerification']);
+    Route::get('/publisher-applications', [AdminController::class, 'publisherApplications']);
+    Route::patch('/publisher-applications/{application}', [AdminController::class, 'decidePublisherApplication']);
+    Route::get('/inquiries', [AdminController::class, 'inquiries']);
+    Route::get('/reports', [AdminController::class, 'reports']);
+    Route::patch('/reports/{report}', [AdminController::class, 'updateReport']);
 });

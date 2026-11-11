@@ -8,6 +8,7 @@ use App\Models\PropertyImage;
 use App\Services\DeepSeekService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -39,6 +40,7 @@ class PropertyController extends Controller
             'ai_tags' => ['sometimes', 'array', 'max:6'],
             'ai_tags.*' => ['string', 'max:40'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'sort' => ['sometimes', 'string', 'in:newest,oldest,price_asc,price_desc'],
         ]);
 
         $query = Property::query()
@@ -94,10 +96,14 @@ class PropertyController extends Controller
 
         $perPage = (int) ($filters['per_page'] ?? 12);
 
-        $properties = $query
-            ->orderByDesc('published_at')
-            ->orderByDesc('id')
-            ->paginate($perPage);
+        match ($filters['sort'] ?? 'newest') {
+            'oldest' => $query->orderBy('published_at')->orderBy('id'),
+            'price_asc' => $query->orderBy('price')->orderByDesc('id'),
+            'price_desc' => $query->orderByDesc('price')->orderByDesc('id'),
+            default => $query->orderByDesc('published_at')->orderByDesc('id'),
+        };
+
+        $properties = $query->paginate($perPage);
 
         return response()->json([
             'data' => $properties->items(),
@@ -165,7 +171,7 @@ class PropertyController extends Controller
      */
     public function store(Request $request, DeepSeekService $deepSeek)
     {
-        $this->ensureActiveOwner($request);
+        Gate::authorize('create', Property::class);
 
         $data = $request->validate($this->propertyRules());
         $images = $data['images'] ?? [];
@@ -209,13 +215,7 @@ class PropertyController extends Controller
      */
     public function update(Request $request, Property $property)
     {
-        $this->ensureActiveOwner($request);
-
-        abort_unless(
-            (int) $property->owner_id === (int) $request->user()->id,
-            403,
-            'You cannot edit another owner’s property.'
-        );
+        Gate::authorize('update', $property);
 
         $data = $request->validate($this->propertyRules(true));
         $images = $data['images'] ?? [];
@@ -257,8 +257,7 @@ class PropertyController extends Controller
 
     public function destroy(Request $request, Property $property)
     {
-        $this->ensureActiveOwner($request);
-        abort_unless((int) $property->owner_id === (int) $request->user()->id, 403);
+        Gate::authorize('delete', $property);
         abort_unless(in_array($property->status, ['draft', 'rejected'], true), 409, 'Only drafts and rejected listings can be deleted.');
 
         foreach ($property->images as $image) {
@@ -272,30 +271,6 @@ class PropertyController extends Controller
         $property->delete();
 
         return response()->json(['message' => 'Listing deleted.']);
-    }
-
-    private function ensureActiveOwner(Request $request): void
-    {
-        abort_unless(
-            $request->user() &&
-            $request->user()->account_status === 'active',
-            403,
-            'Your account is not active.'
-        );
-
-        abort_unless(
-            in_array($request->user()->role, ['owner', 'broker', 'developer'], true),
-            403,
-            'A publisher account is required to manage property listings.'
-        );
-
-        if ($request->user()->role === 'broker') {
-            abort_unless(
-                $request->user()->brokerVerifications()->where('status', 'verified')->exists(),
-                403,
-                'Broker verification is required before managing listings.'
-            );
-        }
     }
 
     private function propertyRules(bool $partial = false): array
@@ -379,7 +354,7 @@ class PropertyController extends Controller
         foreach ($images as $index => $image) {
             try {
                 // Generate a unique file name to prevent overwriting
-                $filename = Str::random(20) . '.' . $image->getClientOriginalExtension();
+                $filename = Str::random(20).'.'.$image->getClientOriginalExtension();
 
                 // Upload the file with the exact MIME type from the browser
                 $path = Storage::disk($disk)->putFileAs('properties', $image, $filename, [

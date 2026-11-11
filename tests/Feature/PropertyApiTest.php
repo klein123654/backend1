@@ -134,8 +134,8 @@ class PropertyApiTest extends TestCase
 
         $this->getJson('/api/properties/'.$property->id)
             ->assertOk()
-            ->assertJsonPath('data.latitude', '8.9475000')
-            ->assertJsonPath('data.longitude', '125.5406000');
+            ->assertJsonPath('data.latitude', 8.9475)
+            ->assertJsonPath('data.longitude', 125.5406);
     }
 
     public function test_public_search_can_filter_by_city_and_price(): void

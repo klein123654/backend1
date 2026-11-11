@@ -27,6 +27,8 @@ class Property extends Model
             'published_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'ai_tags' => 'array',
+            'latitude' => 'float',
+            'longitude' => 'float',
         ];
     }
 

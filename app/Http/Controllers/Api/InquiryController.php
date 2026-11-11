@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Inquiry;
 use App\Models\Property;
+use App\Models\User;
+use App\Notifications\InquiryReceived;
 use App\Services\DeepSeekService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 
 class InquiryController extends Controller
@@ -65,6 +68,15 @@ class InquiryController extends Controller
             // AI scoring is optional and must not prevent inquiry creation.
         }
 
+        $recipients = User::query()
+            ->whereIn('id', array_filter([$property->owner_id, $property->broker_id]))
+            ->where('id', '!=', $request->user()->id)
+            ->get();
+
+        if ($recipients->isNotEmpty()) {
+            $this->notifySafely($recipients, new InquiryReceived($inquiry->setRelation('property', $property)));
+        }
+
         return response()->json(['data' => $inquiry->load('property:id,title,owner_id,broker_id')], 201);
     }
 
@@ -107,7 +119,7 @@ class InquiryController extends Controller
 
     public function messages(Request $request, Inquiry $inquiry): JsonResponse
     {
-        $this->authorizeConversation($request, $inquiry);
+        Gate::authorize('view', $inquiry);
 
         return response()->json([
             'data' => $inquiry->messages()
@@ -121,7 +133,7 @@ class InquiryController extends Controller
 
     public function storeMessage(Request $request, Inquiry $inquiry): JsonResponse
     {
-        $this->authorizeConversation($request, $inquiry);
+        Gate::authorize('view', $inquiry);
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
         ]);
@@ -146,31 +158,9 @@ class InquiryController extends Controller
         ], 201);
     }
 
-    private function authorizeConversation(Request $request, Inquiry $inquiry): void
-    {
-        $user = $request->user();
-        abort_unless($user && $user->account_status === 'active', 403);
-
-        $property = $inquiry->property;
-        $authorized = $user->role === 'admin'
-            || ($user->role === 'buyer' && (int) $inquiry->buyer_id === (int) $user->id)
-            || (in_array($user->role, ['owner', 'developer'], true) && (int) $property->owner_id === (int) $user->id)
-            || ($user->role === 'broker' && (
-                (int) $inquiry->assigned_broker_id === (int) $user->id
-                || (int) $property->broker_id === (int) $user->id
-            ));
-
-        abort_unless($authorized, 403);
-    }
-
     public function update(Request $request, Inquiry $inquiry): JsonResponse
     {
-        $user = $request->user();
-        abort_unless($user->account_status === 'active', 403);
-        $authorized = $user->role === 'admin'
-            || (in_array($user->role, ['owner', 'developer'], true) && (int) $inquiry->property()->value('owner_id') === (int) $user->id)
-            || ($user->role === 'broker' && (int) $inquiry->assigned_broker_id === (int) $user->id);
-        abort_unless($authorized, 403);
+        Gate::authorize('update', $inquiry);
 
         $data = $request->validate(['status' => ['required', 'in:new,in_progress,resolved']]);
         $inquiry->update($data);
