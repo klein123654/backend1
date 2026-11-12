@@ -27,4 +27,4 @@ EXPOSE 10000
 ENV PHP_CLI_SERVER_WORKERS=4
 
 # Apply pending database migrations on every deploy before serving.
-CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
+CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --no-reload --host=0.0.0.0 --port=${PORT:-10000}"]
