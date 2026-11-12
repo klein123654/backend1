@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -58,6 +59,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 $status = $exception->getStatusCode();
                 $type = 'http_error';
                 $message = $exception->getMessage() ?: 'The request could not be processed.';
+
+                // Route model binding failures carry an internal message
+                // ("No query results for model [App\\Models\\...]").
+                if ($status === 404 && ($exception->getPrevious() instanceof ModelNotFoundException || str_starts_with($message, 'No query results'))) {
+                    $message = 'The requested item could not be found.';
+                }
             }
 
             if (str_contains($exception->getMessage(), 'storage') || str_contains($exception->getMessage(), 'Supabase') || str_contains($exception->getMessage(), 'bucket')) {
