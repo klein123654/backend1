@@ -21,5 +21,9 @@ RUN composer install --no-dev --no-interaction \
 
 EXPOSE 10000
 
+# `php artisan serve` handles one request at a time by default, so a slow AI
+# call blocked every other visitor. Run several PHP workers in parallel.
+ENV PHP_CLI_SERVER_WORKERS=4
+
 # Apply pending database migrations on every deploy before serving.
 CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
