@@ -15,8 +15,7 @@ class SavedPropertyController extends Controller
         abort_unless($this->canSaveProperties($request), 403);
         $properties = Property::query()
             ->with('images')
-            ->where('status', 'published')
-            ->whereNotNull('published_at')
+            ->publiclyVisible()
             ->whereIn('id', DB::table('saved_properties')->where('user_id', $request->user()->id)->select('property_id'))
             ->latest('published_at')
             ->get();
@@ -27,7 +26,7 @@ class SavedPropertyController extends Controller
     public function store(Request $request, Property $property): JsonResponse
     {
         abort_unless($this->canSaveProperties($request), 403);
-        abort_unless($property->status === 'published' && $property->published_at, 404);
+        abort_unless($property->isPubliclyVisible(), 404);
         DB::table('saved_properties')->insertOrIgnore([
             'user_id' => $request->user()->id,
             'property_id' => $property->id,

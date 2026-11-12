@@ -8,9 +8,11 @@ use App\Http\Controllers\Api\InquiryController;
 use App\Http\Controllers\Api\MarketInsightController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PublisherApplicationController;
+use App\Http\Controllers\Api\PublisherController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SavedPropertyController;
 use App\Http\Controllers\Api\VerificationController;
+use App\Http\Controllers\ListingAvailabilityController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register'])
@@ -41,6 +43,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/publisher-application', [PublisherApplicationController::class, 'store']);
 });
 
+Route::post('/internal/availability-reminders', [ListingAvailabilityController::class, 'sendReminders'])
+    ->middleware('throttle:5,1');
+Route::get('/barangays', [PropertyController::class, 'barangays']);
+Route::get('/publishers/{user}', [PublisherController::class, 'show']);
 Route::get('/properties', [PropertyController::class, 'index']);
 Route::get('/properties/{property}', [PropertyController::class, 'show']);
 Route::post('/ai/search', AiSearchController::class)
@@ -61,17 +67,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/my/properties', [PropertyController::class, 'store']);
     Route::patch('/my/properties/{property}', [PropertyController::class, 'update']);
     Route::delete('/my/properties/{property}', [PropertyController::class, 'destroy']);
-    Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
-    Route::get('/admin/properties', [AdminController::class, 'listings']);
-    Route::patch('/admin/properties/{property}', [AdminController::class, 'decideListing']);
-    Route::patch('/admin/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
-    Route::get('/admin/users', [AdminController::class, 'users']);
-    Route::patch('/admin/users/{user}', [AdminController::class, 'updateUser']);
-    Route::get('/admin/verifications', [AdminController::class, 'verifications']);
-    Route::patch('/admin/verifications/{verification}', [AdminController::class, 'decideVerification']);
-    Route::get('/admin/publisher-applications', [AdminController::class, 'publisherApplications']);
-    Route::patch('/admin/publisher-applications/{application}', [AdminController::class, 'decidePublisherApplication']);
-    Route::get('/admin/inquiries', [AdminController::class, 'inquiries']);
-    Route::get('/admin/reports', [AdminController::class, 'reports']);
-    Route::patch('/admin/reports/{report}', [AdminController::class, 'updateReport']);
+    Route::patch('/my/properties/{property}/availability', [PropertyController::class, 'updateAvailability']);
+});
+
+Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(function () {
+    Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    Route::get('/properties', [AdminController::class, 'listings']);
+    Route::patch('/properties/{property}', [AdminController::class, 'decideListing']);
+    Route::patch('/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
+    Route::delete('/properties/{property}', [AdminController::class, 'deleteListing']);
+    Route::get('/users', [AdminController::class, 'users']);
+    Route::patch('/users/{user}', [AdminController::class, 'updateUser']);
+    Route::get('/verifications', [AdminController::class, 'verifications']);
+    Route::patch('/verifications/{verification}', [AdminController::class, 'decideVerification']);
+    Route::get('/publisher-applications', [AdminController::class, 'publisherApplications']);
+    Route::patch('/publisher-applications/{application}', [AdminController::class, 'decidePublisherApplication']);
+    Route::get('/inquiries', [AdminController::class, 'inquiries']);
+    Route::get('/reports', [AdminController::class, 'reports']);
+    Route::patch('/reports/{report}', [AdminController::class, 'updateReport']);
 });

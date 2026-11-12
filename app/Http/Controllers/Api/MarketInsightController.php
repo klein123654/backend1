@@ -12,8 +12,7 @@ class MarketInsightController extends Controller
     public function __invoke(DeepSeekService $deepSeek): JsonResponse
     {
         $averagePriceByType = Property::query()
-            ->where('status', 'published')
-            ->whereNotNull('published_at')
+            ->publiclyVisible()
             ->selectRaw('property_type, AVG(price) AS average_price, COUNT(*) AS listing_count')
             ->groupBy('property_type')
             ->orderBy('property_type')
@@ -26,8 +25,7 @@ class MarketInsightController extends Controller
             ->all();
 
         $countByLocation = Property::query()
-            ->where('status', 'published')
-            ->whereNotNull('published_at')
+            ->publiclyVisible()
             ->selectRaw('city, province, COUNT(*) AS listing_count')
             ->groupBy('city', 'province')
             ->orderBy('city')

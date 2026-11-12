@@ -1,9 +1,11 @@
 <?php
 
+use Sentry\Event;
+
 return [
     'dsn' => env('SENTRY_LARAVEL_DSN', env('SENTRY_DSN')),
     'send_default_pii' => false,
-    'before_send' => static function (\Sentry\Event $event): ?\Sentry\Event {
+    'before_send' => static function (Event $event): ?Event {
         $request = $event->getRequest();
 
         if (isset($request['url']) && is_string($request['url'])) {

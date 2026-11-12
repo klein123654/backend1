@@ -18,6 +18,7 @@ class AuthController extends Controller
         return $user->only([
             'id', 'name', 'email', 'phone', 'role',
             'account_status', 'created_at',
+            'contact_phone', 'contact_email', 'messenger_username', 'viber_number',
         ]);
     }
 
@@ -95,10 +96,25 @@ class AuthController extends Controller
     {
         abort_unless($request->user()->account_status === 'active', 403, 'Account suspended.');
 
+        $philippineMobile = 'regex:/^(\+63|0)9\d{9}$/';
         $data = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
+            // Public contact details shown on a publisher's listings and profile page.
+            'contact_phone' => ['sometimes', 'nullable', 'string', $philippineMobile],
+            'contact_email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'messenger_username' => ['sometimes', 'nullable', 'string', 'regex:/^[A-Za-z0-9.]{3,50}$/'],
+            'viber_number' => ['sometimes', 'nullable', 'string', $philippineMobile],
+        ], [
+            'contact_phone.regex' => 'Enter a Philippine mobile number such as 09171234567.',
+            'viber_number.regex' => 'Enter a Philippine mobile number such as 09171234567.',
+            'messenger_username.regex' => 'Use the username from your Facebook page link (letters, numbers and dots).',
         ]);
+
+        $contactFields = ['contact_phone', 'contact_email', 'messenger_username', 'viber_number'];
+        if (! $request->user()->isPublisher()) {
+            $data = array_diff_key($data, array_flip($contactFields));
+        }
 
         $request->user()->fill($data)->save();
 

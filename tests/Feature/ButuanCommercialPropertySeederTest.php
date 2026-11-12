@@ -4,12 +4,15 @@ namespace Tests\Feature;
 
 use App\Models\Property;
 use Database\Seeders\ButuanCommercialPropertySeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
 class ButuanCommercialPropertySeederTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_it_seeds_twenty_idempotent_butuan_commercial_fixtures(): void
     {
         try {

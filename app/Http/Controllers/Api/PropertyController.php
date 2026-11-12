@@ -6,8 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Property;
 use App\Models\PropertyImage;
 use App\Services\DeepSeekService;
+use App\Services\PropertyImageStorage;
+use App\Support\PublisherProfile;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -39,13 +43,15 @@ class PropertyController extends Controller
             'ai_tags' => ['sometimes', 'array', 'max:6'],
             'ai_tags.*' => ['string', 'max:40'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'sort' => ['sometimes', 'string', 'in:newest,oldest,price_asc,price_desc'],
+            'barangay' => ['sometimes', 'string', 'max:120'],
+            'publisher' => ['sometimes', 'integer', 'min:1'],
         ]);
 
         $query = Property::query()
             ->select(self::PUBLIC_COLUMNS)
-            ->with(['images', 'owner:id,name', 'broker:id,name'])
-            ->where('status', 'published')
-            ->whereNotNull('published_at');
+            ->with(['images', 'broker:id,name', ...PublisherProfile::eagerLoads()])
+            ->publiclyVisible();
 
         if (! empty($filters['search'])) {
             $term = '%'.strtolower($filters['search']).'%';
@@ -72,6 +78,14 @@ class PropertyController extends Controller
             }
         }
 
+        if (! empty($filters['barangay'])) {
+            $query->whereRaw('LOWER(barangay) = ?', [strtolower(trim($filters['barangay']))]);
+        }
+
+        if (isset($filters['publisher'])) {
+            $query->where('owner_id', $filters['publisher']);
+        }
+
         if (isset($filters['min_price'])) {
             $query->where('price', '>=', $filters['min_price']);
         }
@@ -94,13 +108,17 @@ class PropertyController extends Controller
 
         $perPage = (int) ($filters['per_page'] ?? 12);
 
-        $properties = $query
-            ->orderByDesc('published_at')
-            ->orderByDesc('id')
-            ->paginate($perPage);
+        match ($filters['sort'] ?? 'newest') {
+            'oldest' => $query->orderBy('published_at')->orderBy('id'),
+            'price_asc' => $query->orderBy('price')->orderByDesc('id'),
+            'price_desc' => $query->orderByDesc('price')->orderByDesc('id'),
+            default => $query->orderByDesc('published_at')->orderByDesc('id'),
+        };
+
+        $properties = $query->paginate($perPage);
 
         return response()->json([
-            'data' => $properties->items(),
+            'data' => array_map($this->withPublisher(...), $properties->items()),
             'meta' => [
                 'current_page' => $properties->currentPage(),
                 'last_page' => $properties->lastPage(),
@@ -117,9 +135,8 @@ class PropertyController extends Controller
     {
         $query = Property::query()
             ->select(self::PUBLIC_COLUMNS)
-            ->with(['images', 'owner:id,name', 'broker:id,name'])
-            ->where('status', 'published')
-            ->whereNotNull('published_at');
+            ->with(['images', 'broker:id,name', ...PublisherProfile::eagerLoads()])
+            ->publiclyVisible();
 
         if (ctype_digit($property)) {
             $query->where('id', (int) $property);
@@ -128,7 +145,52 @@ class PropertyController extends Controller
         }
 
         return response()->json([
-            'data' => $query->firstOrFail(),
+            'data' => $this->withPublisher($query->firstOrFail()),
+        ]);
+    }
+
+    /**
+     * Number of publicly visible listings per barangay, for the home page.
+     */
+    public function barangays(): JsonResponse
+    {
+        $counts = Property::query()
+            ->publiclyVisible()
+            ->whereNotNull('barangay')
+            ->where('barangay', '!=', '')
+            ->selectRaw('barangay, COUNT(*) AS listing_count')
+            ->groupBy('barangay')
+            ->orderByDesc('listing_count')
+            ->orderBy('barangay')
+            ->get()
+            ->map(fn (Property $row): array => [
+                'barangay' => $row->barangay,
+                'listing_count' => (int) $row->getAttribute('listing_count'),
+            ]);
+
+        return response()->json(['data' => $counts]);
+    }
+
+    /**
+     * Mark a listing as still available, rented or sold. Rented and sold
+     * listings are hidden from the public; confirming resets the reminder clock.
+     */
+    public function updateAvailability(Request $request, Property $property): JsonResponse
+    {
+        Gate::authorize('update', $property);
+
+        $data = $request->validate([
+            'availability' => ['required', 'in:'.implode(',', Property::AVAILABILITY_OPTIONS)],
+        ]);
+
+        $property->markAvailabilityConfirmed($data['availability']);
+        $property->save();
+
+        return response()->json([
+            'message' => $data['availability'] === 'available'
+                ? 'Thanks! The listing is marked as still available.'
+                : 'The listing is marked as '.$data['availability'].' and hidden from the public.',
+            'data' => $property->fresh()->load('images'),
         ]);
     }
 
@@ -165,7 +227,7 @@ class PropertyController extends Controller
      */
     public function store(Request $request, DeepSeekService $deepSeek)
     {
-        $this->ensureActiveOwner($request);
+        Gate::authorize('create', Property::class);
 
         $data = $request->validate($this->propertyRules());
         $images = $data['images'] ?? [];
@@ -204,18 +266,12 @@ class PropertyController extends Controller
     }
 
     /**
-     * Update only a property belonging to the authenticated owner.
-     * Publication status cannot be changed through this endpoint.
+     * Update a property belonging to the authenticated owner. Editing a pending
+     * or published listing sends it back to administrator review.
      */
     public function update(Request $request, Property $property)
     {
-        $this->ensureActiveOwner($request);
-
-        abort_unless(
-            (int) $property->owner_id === (int) $request->user()->id,
-            403,
-            'You cannot edit another owner’s property.'
-        );
+        Gate::authorize('update', $property);
 
         $data = $request->validate($this->propertyRules(true));
         $images = $data['images'] ?? [];
@@ -234,7 +290,19 @@ class PropertyController extends Controller
 
         $property = DB::transaction(function () use ($property, $data, $images, $submitForReview) {
             $property->fill($data);
-            if ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
+            $isEditingSubmittedListing = in_array($property->status, ['pending', 'published'], true)
+                && ($property->isDirty() || ! empty($images));
+            $property->markAvailabilityConfirmed($property->availability ?? 'available');
+
+            if ($isEditingSubmittedListing) {
+                // Changes to a live or submitted listing must be re-approved, so
+                // the listing is hidden from the public until an admin reviews it.
+                $property->status = 'pending';
+                $property->published_at = null;
+                $property->reviewed_by = null;
+                $property->reviewed_at = null;
+                $property->review_notes = null;
+            } elseif ($submitForReview && in_array($property->status, ['draft', 'rejected'], true)) {
                 $property->status = 'pending';
                 $property->reviewed_by = null;
                 $property->reviewed_at = null;
@@ -250,52 +318,37 @@ class PropertyController extends Controller
         });
 
         return response()->json([
-            'message' => 'Property updated.',
+            'message' => $property->status === 'pending'
+                ? 'Property updated and sent to an administrator for review.'
+                : 'Property updated.',
             'data' => $property->fresh()->load('images'),
         ]);
     }
 
-    public function destroy(Request $request, Property $property)
+    /**
+     * Owners may delete their own listings at any status. Inquiries, reports
+     * and saved entries for the listing are removed by cascading foreign keys.
+     */
+    public function destroy(Property $property, PropertyImageStorage $imageStorage)
     {
-        $this->ensureActiveOwner($request);
-        abort_unless((int) $property->owner_id === (int) $request->user()->id, 403);
-        abort_unless(in_array($property->status, ['draft', 'rejected'], true), 409, 'Only drafts and rejected listings can be deleted.');
+        Gate::authorize('delete', $property);
 
-        foreach ($property->images as $image) {
-            $disk = config('filesystems.default', 'public');
-            $relativePath = $this->relativeStoragePath($image->path);
-
-            if ($relativePath !== '') {
-                Storage::disk($disk)->delete($relativePath);
-            }
-        }
-        $property->delete();
+        $imageStorage->deleteListing($property);
 
         return response()->json(['message' => 'Listing deleted.']);
     }
 
-    private function ensureActiveOwner(Request $request): void
+    /**
+     * Attach the publisher's public profile and drop the raw owner relation.
+     */
+    private function withPublisher(Property $property): Property
     {
-        abort_unless(
-            $request->user() &&
-            $request->user()->account_status === 'active',
-            403,
-            'Your account is not active.'
-        );
-
-        abort_unless(
-            in_array($request->user()->role, ['owner', 'broker', 'developer'], true),
-            403,
-            'A publisher account is required to manage property listings.'
-        );
-
-        if ($request->user()->role === 'broker') {
-            abort_unless(
-                $request->user()->brokerVerifications()->where('status', 'verified')->exists(),
-                403,
-                'Broker verification is required before managing listings.'
-            );
+        if ($property->owner) {
+            $property->setAttribute('publisher', PublisherProfile::make($property->owner));
+            $property->owner->setRelations([])->setHidden(['role', 'created_at', 'contact_phone', 'contact_email', 'messenger_username', 'viber_number']);
         }
+
+        return $property;
     }
 
     private function propertyRules(bool $partial = false): array
@@ -379,7 +432,7 @@ class PropertyController extends Controller
         foreach ($images as $index => $image) {
             try {
                 // Generate a unique file name to prevent overwriting
-                $filename = Str::random(20) . '.' . $image->getClientOriginalExtension();
+                $filename = Str::random(20).'.'.$image->getClientOriginalExtension();
 
                 // Upload the file with the exact MIME type from the browser
                 $path = Storage::disk($disk)->putFileAs('properties', $image, $filename, [
@@ -408,24 +461,6 @@ class PropertyController extends Controller
                 );
             }
         }
-    }
-
-    private function relativeStoragePath(string $path): string
-    {
-        $parsed = parse_url($path, PHP_URL_PATH);
-
-        if ($parsed === null || $parsed === '') {
-            return '';
-        }
-
-        $bucketName = config('filesystems.disks.supabase.bucket', 'property-images');
-        $basePath = '/storage/v1/object/public/'.$bucketName.'/';
-
-        if (str_contains($parsed, '/storage/v1/object/public/')) {
-            return ltrim(str_replace($basePath, '', $parsed), '/');
-        }
-
-        return ltrim(str_replace('/storage/', '', $parsed), '/');
     }
 
     private function uniqueSlug(string $title, ?int $ignoreId = null): string

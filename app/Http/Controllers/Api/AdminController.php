@@ -9,6 +9,11 @@ use App\Models\Property;
 use App\Models\PropertyReport;
 use App\Models\PublisherApplication;
 use App\Models\User;
+use App\Notifications\BrokerVerificationReviewed;
+use App\Notifications\ListingRemoved;
+use App\Notifications\ListingReviewed;
+use App\Notifications\PublisherApplicationReviewed;
+use App\Services\PropertyImageStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,8 +21,6 @@ class AdminController extends Controller
 {
     public function dashboard(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => [
             'users' => User::count(),
             'listings' => Property::count(),
@@ -31,15 +34,13 @@ class AdminController extends Controller
 
     public function listings(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => Property::with(['owner:id,name,email', 'broker:id,name,email', 'images'])
             ->latest()->paginate(50)->items()]);
     }
 
     public function decideListing(Request $request, Property $property): JsonResponse
     {
-        $admin = $this->authorizeAdmin($request);
+        $admin = $request->user();
         abort_unless($property->status === 'pending', 409, 'Only pending listings can be reviewed.');
         $data = $request->validate([
             'status' => ['required', 'in:published,rejected,draft'],
@@ -47,17 +48,24 @@ class AdminController extends Controller
         ]);
         $property->status = $data['status'];
         $property->published_at = $data['status'] === 'published' ? now() : null;
+        if ($data['status'] === 'published') {
+            $property->markAvailabilityConfirmed();
+        }
         $property->reviewed_by = $admin->id;
         $property->reviewed_at = now();
         $property->review_notes = $data['review_notes'] ?? null;
         $property->save();
+
+        if ($property->owner) {
+            $this->notifySafely($property->owner, new ListingReviewed($property));
+        }
 
         return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);
     }
 
     public function unpublishListing(Request $request, Property $property): JsonResponse
     {
-        $admin = $this->authorizeAdmin($request);
+        $admin = $request->user();
         abort_unless($property->status === 'published', 409, 'Only published listings can be unpublished.');
 
         $data = $request->validate([
@@ -72,20 +80,42 @@ class AdminController extends Controller
             'review_notes' => $data['review_notes'],
         ]);
 
+        if ($property->owner) {
+            $this->notifySafely($property->owner, new ListingReviewed($property, wasUnpublished: true));
+        }
+
         return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);
+    }
+
+    /**
+     * Permanently delete any listing, e.g. spam or test data. The owner is emailed.
+     */
+    public function deleteListing(Request $request, Property $property, PropertyImageStorage $imageStorage): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $owner = $property->owner;
+        $title = $property->title;
+
+        $imageStorage->deleteListing($property);
+
+        if ($owner) {
+            $this->notifySafely($owner, new ListingRemoved($title, $data['reason'] ?? null));
+        }
+
+        return response()->json(['message' => 'Listing deleted.']);
     }
 
     public function users(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => User::query()->select('id', 'name', 'email', 'phone', 'role', 'account_status', 'created_at')
             ->latest()->paginate(50)->items()]);
     }
 
     public function updateUser(Request $request, User $user): JsonResponse
     {
-        $this->authorizeAdmin($request);
         abort_if($user->role === 'admin', 403, 'Administrator accounts cannot be changed here.');
         $data = $request->validate(['account_status' => ['required', 'in:active,suspended']]);
         $user->update($data);
@@ -95,15 +125,13 @@ class AdminController extends Controller
 
     public function verifications(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => BrokerVerification::with('broker:id,name,email,phone')
             ->latest()->paginate(50)->items()]);
     }
 
     public function decideVerification(Request $request, BrokerVerification $verification): JsonResponse
     {
-        $admin = $this->authorizeAdmin($request);
+        $admin = $request->user();
         $data = $request->validate([
             'status' => ['required', 'in:verified,rejected'],
             'review_notes' => ['nullable', 'required_if:status,rejected', 'string', 'max:5000'],
@@ -114,13 +142,15 @@ class AdminController extends Controller
             'reviewed_at' => now(),
         ]);
 
+        if ($verification->broker) {
+            $this->notifySafely($verification->broker, new BrokerVerificationReviewed($verification));
+        }
+
         return response()->json(['data' => $verification->fresh()->load('broker:id,name,email,phone')]);
     }
 
     public function publisherApplications(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json([
             'data' => PublisherApplication::with('applicant:id,name,email,phone,role')
                 ->latest()->paginate(50)->items(),
@@ -129,7 +159,7 @@ class AdminController extends Controller
 
     public function decidePublisherApplication(Request $request, PublisherApplication $application): JsonResponse
     {
-        $admin = $this->authorizeAdmin($request);
+        $admin = $request->user();
         abort_unless($application->status === 'pending', 409, 'Only pending applications can be reviewed.');
 
         $data = $request->validate([
@@ -161,6 +191,10 @@ class AdminController extends Controller
             }
         }
 
+        if ($application->applicant) {
+            $this->notifySafely($application->applicant, new PublisherApplicationReviewed($application));
+        }
+
         return response()->json([
             'data' => $application->fresh()->load('applicant:id,name,email,phone,role'),
         ]);
@@ -168,23 +202,19 @@ class AdminController extends Controller
 
     public function inquiries(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => Inquiry::with(['property:id,title', 'buyer:id,name,email'])
             ->latest()->paginate(50)->items()]);
     }
 
     public function reports(Request $request): JsonResponse
     {
-        $this->authorizeAdmin($request);
-
         return response()->json(['data' => PropertyReport::with(['property:id,title', 'reporter:id,name,email'])
             ->latest()->paginate(50)->items()]);
     }
 
     public function updateReport(Request $request, PropertyReport $report): JsonResponse
     {
-        $admin = $this->authorizeAdmin($request);
+        $admin = $request->user();
         $data = $request->validate([
             'status' => ['required', 'in:open,in_progress,resolved'],
             'resolution_notes' => ['nullable', 'string', 'max:5000'],
@@ -192,13 +222,5 @@ class AdminController extends Controller
         $report->update([...$data, 'reviewed_by' => $admin->id, 'reviewed_at' => now()]);
 
         return response()->json(['data' => $report->fresh()->load(['property:id,title', 'reporter:id,name,email'])]);
-    }
-
-    private function authorizeAdmin(Request $request): User
-    {
-        $user = $request->user();
-        abort_unless($user && $user->role === 'admin' && $user->account_status === 'active', 403);
-
-        return $user;
     }
 }
