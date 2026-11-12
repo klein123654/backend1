@@ -17,7 +17,8 @@ RUN composer install --no-dev --no-interaction \
        storage/framework/sessions \
        storage/framework/views \
        storage/logs bootstrap/cache \
-    && chown -R www-data:www-data storage bootstrap/cache
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && echo "expose_php = Off" > /usr/local/etc/php/conf.d/security.ini
 
 EXPOSE 10000
 
