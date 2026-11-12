@@ -34,4 +34,11 @@ class SecurityHeadersTest extends TestCase
     {
         $this->get('/up')->assertOk()->assertHeader('X-Frame-Options', 'DENY');
     }
+
+    public function test_missing_records_do_not_leak_model_names(): void
+    {
+        $this->getJson('/api/properties/999999')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'The requested item could not be found.');
+    }
 }
