@@ -10,6 +10,7 @@ use App\Services\PropertyImageStorage;
 use App\Support\PublisherProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
@@ -131,7 +132,7 @@ class PropertyController extends Controller
     /**
      * Public details by numeric ID or slug.
      */
-    public function show(string $property)
+    public function show(Request $request, string $property)
     {
         $query = Property::query()
             ->select(self::PUBLIC_COLUMNS)
@@ -144,9 +145,33 @@ class PropertyController extends Controller
             $query->where('slug', $property);
         }
 
+        $record = $query->firstOrFail();
+        $this->recordView($request, $record);
+
         return response()->json([
-            'data' => $this->withPublisher($query->firstOrFail()),
+            'data' => $this->withPublisher($record),
         ]);
+    }
+
+    /**
+     * Count a listing view at most once per visitor per hour, ignoring
+     * crawlers, link-preview bots and the publisher's own visits.
+     */
+    private function recordView(Request $request, Property $property): void
+    {
+        if (preg_match('/bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|headless|lighthouse/i', (string) $request->userAgent())) {
+            return;
+        }
+
+        $viewer = auth('sanctum')->user();
+        if ($viewer && in_array($viewer->id, [$property->owner_id, $property->broker_id], true)) {
+            return;
+        }
+
+        $visitor = $viewer ? 'user:'.$viewer->id : 'ip:'.hash('sha256', (string) $request->ip());
+        if (Cache::add('listing-view:'.$property->id.':'.$visitor, true, 3600)) {
+            Property::query()->whereKey($property->id)->increment('views_count');
+        }
     }
 
     /**
@@ -273,10 +298,30 @@ class PropertyController extends Controller
     {
         Gate::authorize('update', $property);
 
-        $data = $request->validate($this->propertyRules(true));
+        $data = $request->validate($this->propertyRules(true) + [
+            'remove_image_ids' => ['sometimes', 'array', 'max:20'],
+            'remove_image_ids.*' => ['integer'],
+            'image_order' => ['sometimes', 'array', 'max:30'],
+            'image_order.*' => ['integer'],
+            'primary_image_id' => ['sometimes', 'nullable', 'integer'],
+        ]);
         $images = $data['images'] ?? [];
         $submitForReview = (bool) ($data['submit_for_review'] ?? false);
-        unset($data['images'], $data['submit_for_review']);
+        $removeIds = array_map('intval', $data['remove_image_ids'] ?? []);
+        $imageOrder = array_map('intval', $data['image_order'] ?? []);
+        $primaryId = isset($data['primary_image_id']) ? (int) $data['primary_image_id'] : null;
+        unset($data['images'], $data['submit_for_review'], $data['remove_image_ids'], $data['image_order'], $data['primary_image_id']);
+
+        $ownImageIds = $property->images()->pluck('id')->all();
+        foreach ([...$removeIds, ...$imageOrder, ...array_filter([$primaryId])] as $imageId) {
+            abort_unless(in_array($imageId, $ownImageIds, true), 422, 'One of the selected photos does not belong to this listing.');
+        }
+        if ($removeIds !== [] && count($ownImageIds) - count(array_unique($removeIds)) + count($images) < 1) {
+            return response()->json([
+                'message' => 'Keep at least one photo on the listing.',
+                'errors' => ['images' => ['Keep at least one photo on the listing.']],
+            ], 422);
+        }
 
         if (
             isset($data['title']) &&
@@ -316,6 +361,10 @@ class PropertyController extends Controller
 
             return $property;
         });
+
+        if ($removeIds !== [] || $imageOrder !== [] || $primaryId !== null) {
+            app(PropertyImageStorage::class)->arrange($property, $removeIds, $imageOrder, $primaryId);
+        }
 
         return response()->json([
             'message' => $property->status === 'pending'
@@ -428,6 +477,8 @@ class PropertyController extends Controller
     private function saveImages(Property $property, array $images): void
     {
         $disk = config('filesystems.default', 'public');
+        $nextOrder = ((int) $property->images()->reorder()->max('sort_order')) + ($property->images()->exists() ? 1 : 0);
+        $hasPrimary = $property->images()->where('is_primary', true)->exists();
 
         foreach ($images as $index => $image) {
             try {
@@ -450,8 +501,8 @@ class PropertyController extends Controller
                     'property_id' => $property->id,
                     'path' => $storedUrl,
                     'alt_text' => $property->title,
-                    'sort_order' => $index,
-                    'is_primary' => $index === 0 && ! $property->images()->exists(),
+                    'sort_order' => $nextOrder + $index,
+                    'is_primary' => $index === 0 && ! $hasPrimary,
                 ]);
             } catch (\Throwable $exception) {
                 throw new \RuntimeException(
