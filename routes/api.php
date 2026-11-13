@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AiDescriptionController;
 use App\Http\Controllers\Api\AiSearchController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\InquiryController;
 use App\Http\Controllers\Api\MarketInsightController;
 use App\Http\Controllers\Api\PropertyController;
@@ -11,6 +13,7 @@ use App\Http\Controllers\Api\PublisherApplicationController;
 use App\Http\Controllers\Api\PublisherController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SavedPropertyController;
+use App\Http\Controllers\Api\SavedSearchController;
 use App\Http\Controllers\Api\VerificationController;
 use App\Http\Controllers\ListingAvailabilityController;
 use Illuminate\Support\Facades\Route;
@@ -24,11 +27,20 @@ Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])
     ->middleware('throttle:5,1');
 Route::post('/reset-password', [AuthController::class, 'resetPassword'])
     ->middleware('throttle:10,1');
+Route::post('/auth/google', GoogleAuthController::class)
+    ->middleware('throttle:10,1');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::patch('/user', [AuthController::class, 'updateProfile']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::put('/user/password', [AccountController::class, 'changePassword'])->middleware('throttle:5,1');
+    Route::post('/user/email', [AccountController::class, 'requestEmailChange'])->middleware('throttle:5,1');
+    Route::delete('/user', [AccountController::class, 'destroy'])->middleware('throttle:5,1');
+    Route::post('/email/verification-notification', [AccountController::class, 'resendVerification'])->middleware('throttle:3,10');
+    Route::get('/my/saved-searches', [SavedSearchController::class, 'index']);
+    Route::post('/my/saved-searches', [SavedSearchController::class, 'store'])->middleware('throttle:20,1');
+    Route::delete('/my/saved-searches/{savedSearch}', [SavedSearchController::class, 'destroy']);
     Route::get('/my/inquiries', [InquiryController::class, 'mine']);
     Route::get('/my/inquiries/sent', [InquiryController::class, 'sent']);
     Route::get('/inquiries/{inquiry}/messages', [InquiryController::class, 'messages']);
