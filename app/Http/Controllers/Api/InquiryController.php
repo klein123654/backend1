@@ -7,11 +7,14 @@ use App\Models\Inquiry;
 use App\Models\Property;
 use App\Models\User;
 use App\Notifications\InquiryReceived;
+use App\Notifications\InquiryReplyReceived;
 use App\Services\DeepSeekService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
 
 class InquiryController extends Controller
@@ -148,14 +151,67 @@ class InquiryController extends Controller
                 'body' => trim($data['body']),
             ]);
 
-            $inquiry->forceFill(['last_message_at' => $message->created_at])->save();
+            $updates = ['last_message_at' => $message->created_at];
+            // A publisher's first reply moves the inquiry out of "new".
+            if ($user->id !== $inquiry->buyer_id && $inquiry->status === 'new') {
+                $updates['status'] = 'in_progress';
+            }
+            $inquiry->forceFill($updates)->save();
 
             return $message;
         });
 
+        $this->notifyReplyRecipients($inquiry, $message, $user);
+
         return response()->json([
             'data' => $message->load('sender:id,name'),
         ], 201);
+    }
+
+    /** One reply email per recipient per conversation in this window. */
+    private const REPLY_EMAIL_COOLDOWN_SECONDS = 600;
+
+    /**
+     * Email the other side of the conversation. Rapid back-and-forth sends at
+     * most one email per recipient every ten minutes.
+     */
+    private function notifyReplyRecipients(Inquiry $inquiry, $message, User $sender): void
+    {
+        $inquiry->loadMissing('property:id,title,owner_id,broker_id');
+        $notification = new InquiryReplyReceived($inquiry, $message, $sender->name);
+        $shouldSend = fn (string $recipientKey): bool => Cache::add(
+            'inquiry-reply-email:'.$inquiry->id.':'.$recipientKey,
+            true,
+            self::REPLY_EMAIL_COOLDOWN_SECONDS
+        );
+
+        if ($sender->id === $inquiry->buyer_id) {
+            $recipients = User::query()
+                ->whereIn('id', array_filter([$inquiry->property?->owner_id, $inquiry->assigned_broker_id]))
+                ->where('id', '!=', $sender->id)
+                ->where('account_status', 'active')
+                ->get()
+                ->filter(fn (User $recipient): bool => $shouldSend('user:'.$recipient->id));
+
+            if ($recipients->isNotEmpty()) {
+                $this->notifySafely($recipients, $notification);
+            }
+
+            return;
+        }
+
+        $buyer = $inquiry->buyer_id ? User::find($inquiry->buyer_id) : null;
+        if ($buyer && $buyer->account_status === 'active') {
+            if ($shouldSend('user:'.$buyer->id)) {
+                $this->notifySafely($buyer, $notification);
+            }
+        } elseif (! $buyer && $inquiry->email && ! str_ends_with($inquiry->email, '.invalid') && $shouldSend('email:'.$inquiry->email)) {
+            try {
+                Notification::route('mail', $inquiry->email)->notify($notification);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
     }
 
     public function update(Request $request, Inquiry $inquiry): JsonResponse
