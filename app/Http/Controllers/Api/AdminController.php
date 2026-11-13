@@ -14,8 +14,10 @@ use App\Notifications\ListingRemoved;
 use App\Notifications\ListingReviewed;
 use App\Notifications\PublisherApplicationReviewed;
 use App\Services\PropertyImageStorage;
+use App\Services\SavedSearchAlerts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class AdminController extends Controller
 {
@@ -58,6 +60,16 @@ class AdminController extends Controller
 
         if ($property->owner) {
             $this->notifySafely($property->owner, new ListingReviewed($property));
+        }
+
+        // Alert saved-search subscribers the first time a listing goes live
+        // (re-approvals after an edit don't email them again).
+        if ($data['status'] === 'published' && Cache::add('saved-search-alerted:'.$property->id, true, now()->addDays(90))) {
+            try {
+                app(SavedSearchAlerts::class)->notifyFor($property);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
         }
 
         return response()->json(['data' => $property->fresh()->load(['owner:id,name,email', 'broker:id,name,email', 'images'])]);

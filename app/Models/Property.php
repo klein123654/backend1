@@ -96,7 +96,7 @@ class Property extends Model
 
     public function images(): HasMany
     {
-        return $this->hasMany(PropertyImage::class);
+        return $this->hasMany(PropertyImage::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function inquiries(): HasMany

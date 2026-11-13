@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\Account\VerifyEmailAddress;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -15,11 +16,20 @@ class AuthController extends Controller
 {
     private function userData(User $user): array
     {
-        return $user->only([
-            'id', 'name', 'email', 'phone', 'role',
-            'account_status', 'created_at',
-            'contact_phone', 'contact_email', 'messenger_username', 'viber_number',
-        ]);
+        return self::publicUserData($user);
+    }
+
+    /** The signed-in user's own account details as sent to the frontend. */
+    public static function publicUserData(User $user): array
+    {
+        return [
+            ...$user->only([
+                'id', 'name', 'email', 'phone', 'role',
+                'account_status', 'created_at',
+                'contact_phone', 'contact_email', 'messenger_username', 'viber_number',
+            ]),
+            'email_verified' => $user->hasVerifiedEmail(),
+        ];
     }
 
     public function register(Request $request): JsonResponse
@@ -43,6 +53,8 @@ class AuthController extends Controller
             'role' => 'buyer',
             'account_status' => 'active',
         ]);
+
+        $this->notifySafely($user, new VerifyEmailAddress);
 
         $token = $user->createToken('butuanspaces-vue')->plainTextToken;
 

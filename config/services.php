@@ -40,6 +40,11 @@ return [
         'secret' => env('CRON_SECRET'),
     ],
 
+    // "Sign in with Google" (OAuth web client ID). Leave empty to hide it.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
