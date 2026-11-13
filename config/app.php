@@ -53,7 +53,9 @@ return [
     */
 
     'url' => env('APP_URL', 'http://localhost'),
-    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
+    // FRONTEND_URL may list several origins (comma-separated) for CORS; links in
+    // emails always use the first one.
+    'frontend_url' => trim(explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173'))[0]),
 
     /*
     |--------------------------------------------------------------------------
