@@ -317,6 +317,10 @@ class DeepSeekService
                                     'type' => 'string',
                                     'description' => 'One supported value: Office Spaces, Retail Spaces, Warehouses, or Commercial Lots. Empty for generic commercial requests or when unspecified.',
                                 ],
+                                'listing_type' => [
+                                    'type' => 'string',
+                                    'description' => 'One of rent, lease, or sale when the user says so; empty when unspecified.',
+                                ],
                                 'max_price' => [
                                     'type' => 'number',
                                     'description' => 'Maximum price in PHP; use 0 when unspecified.',
@@ -328,10 +332,10 @@ class DeepSeekService
                                 'keywords' => [
                                     'type' => 'array',
                                     'items' => ['type' => 'string'],
-                                    'description' => 'Distinctive property terms from the query.',
+                                    'description' => 'Distinctive property features from the query, such as "loading bay" or "corner"; do not repeat the location, property type, listing type, price, or size.',
                                 ],
                             ],
-                            'required' => ['location', 'property_type', 'max_price', 'min_size', 'keywords'],
+                            'required' => ['location', 'property_type', 'listing_type', 'max_price', 'min_size', 'keywords'],
                         ],
                     ],
                 ]],
@@ -354,7 +358,7 @@ class DeepSeekService
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Summarize these matching commercial property listings for the user. Do not invent details; clearly say when no listings match.',
+                        'content' => 'Summarize these matching commercial property listings for the user in two to four sentences. Prices are in Philippine pesos (₱). Do not invent details; clearly say when no listings match.',
                     ],
                     ['role' => 'user', 'content' => $query],
                     [
