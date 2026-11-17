@@ -3,17 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Inquiry;
 use App\Models\User;
 use App\Notifications\Account\AccountSecurityNotice;
 use App\Notifications\Account\ConfirmEmailChange;
 use App\Notifications\Account\VerifyEmailAddress;
-use App\Services\PropertyImageStorage;
+use App\Services\AccountDeletion;
 use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -21,7 +19,7 @@ use Laravel\Sanctum\PersonalAccessToken;
 class AccountController extends Controller
 {
     /** Placeholder written over a deleted buyer's contact details on past inquiries. */
-    public const DELETED_EMAIL = 'deleted-account@butuanspaces.invalid';
+    public const DELETED_EMAIL = AccountDeletion::DELETED_EMAIL;
 
     public function changePassword(Request $request): JsonResponse
     {
@@ -128,7 +126,7 @@ class AccountController extends Controller
      * are removed; past inquiries the person sent stay with the publisher but
      * their contact details are wiped.
      */
-    public function destroy(Request $request, PropertyImageStorage $imageStorage): JsonResponse
+    public function destroy(Request $request, AccountDeletion $deletion): JsonResponse
     {
         $user = $request->user();
         abort_if($user->role === 'admin', 403, 'Administrator accounts cannot be deleted from the account page.');
@@ -136,19 +134,7 @@ class AccountController extends Controller
         $data = $request->validate(['password' => ['required', 'string']]);
         $this->assertPassword($user, $data['password'], 'password');
 
-        foreach ($user->ownedProperties()->with('images')->get() as $property) {
-            $imageStorage->deleteListing($property);
-        }
-
-        DB::transaction(function () use ($user): void {
-            Inquiry::where('buyer_id', $user->id)->update([
-                'name' => 'Deleted account',
-                'email' => self::DELETED_EMAIL,
-                'phone' => null,
-            ]);
-            $user->tokens()->delete();
-            $user->delete();
-        });
+        $deletion->delete($user);
 
         return response()->json(['message' => 'Your account has been deleted.']);
     }
