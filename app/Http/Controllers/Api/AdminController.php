@@ -9,15 +9,20 @@ use App\Models\Property;
 use App\Models\PropertyReport;
 use App\Models\PublisherApplication;
 use App\Models\User;
+use App\Notifications\Account\AccountRemovedByAdmin;
 use App\Notifications\BrokerVerificationReviewed;
 use App\Notifications\ListingRemoved;
 use App\Notifications\ListingReviewed;
 use App\Notifications\PublisherApplicationReviewed;
+use App\Services\AccountDeletion;
 use App\Services\PropertyImageStorage;
 use App\Services\SavedSearchAlerts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class AdminController extends Controller
 {
@@ -133,6 +138,51 @@ class AdminController extends Controller
         $user->update($data);
 
         return response()->json(['data' => $user->only(['id', 'name', 'email', 'phone', 'role', 'account_status', 'created_at'])]);
+    }
+
+    /**
+     * Permanently delete a non-admin account (e.g. test or spam accounts).
+     * The admin re-enters their own password; the person can be emailed.
+     */
+    public function deleteUser(Request $request, User $user, AccountDeletion $deletion): JsonResponse
+    {
+        $admin = $request->user();
+        abort_if($user->role === 'admin', 403, 'Administrator accounts cannot be deleted.');
+
+        $data = $request->validate([
+            'password' => ['required', 'string'],
+            'reason' => ['nullable', 'string', 'max:1000'],
+            'notify_user' => ['sometimes', 'boolean'],
+        ]);
+
+        if (! Hash::check($data['password'], $admin->password)) {
+            return response()->json([
+                'message' => 'That password is incorrect.',
+                'type' => 'validation_error',
+                'errors' => ['password' => ['That password is incorrect.']],
+            ], 422);
+        }
+
+        $email = $user->email;
+        $name = $user->name;
+        $deletion->delete($user);
+
+        Log::info('Admin deleted account', [
+            'admin_id' => $admin->id,
+            'deleted_user_id' => $user->id,
+            'deleted_role' => $user->role,
+            'reason' => $data['reason'] ?? null,
+        ]);
+
+        if ($data['notify_user'] ?? false) {
+            try {
+                Notification::route('mail', $email)->notify(new AccountRemovedByAdmin($name, $data['reason'] ?? null));
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return response()->json(['message' => "The account for {$name} was deleted."]);
     }
 
     public function verifications(Request $request): JsonResponse

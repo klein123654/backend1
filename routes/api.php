@@ -90,6 +90,7 @@ Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(
     Route::delete('/properties/{property}', [AdminController::class, 'deleteListing']);
     Route::get('/users', [AdminController::class, 'users']);
     Route::patch('/users/{user}', [AdminController::class, 'updateUser']);
+    Route::delete('/users/{user}', [AdminController::class, 'deleteUser'])->middleware('throttle:20,1');
     Route::get('/verifications', [AdminController::class, 'verifications']);
     Route::patch('/verifications/{verification}', [AdminController::class, 'decideVerification']);
     Route::get('/publisher-applications', [AdminController::class, 'publisherApplications']);
