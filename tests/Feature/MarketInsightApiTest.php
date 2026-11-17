@@ -91,4 +91,17 @@ class MarketInsightApiTest extends TestCase
             ->assertJsonPath('summary', 'There are 7 published commercial listings in Butuan City. The most listed property types are Office Spaces and Retail Spaces (3 listings each). Doongan and Libertad have the most listings of any barangay (3 each).');
         $this->getJson('/api/ai/market-insight')->assertJsonPath('ai_written', false);
     }
+
+    public function test_no_barangay_is_called_top_when_each_has_one_listing(): void
+    {
+        $owner = $this->makeUser('owner');
+        foreach (['Libertad', 'Doongan', 'Bancasi'] as $barangay) {
+            $this->makeListing($owner, ['barangay' => $barangay]);
+        }
+        $this->mock(DeepSeekService::class)->shouldReceive('marketInsight')->andReturn(['success' => false, 'summary' => null]);
+
+        $this->getJson('/api/ai/market-insight')->assertOk()
+            ->assertJsonPath('aggregates.highlights.top_barangays', [])
+            ->assertJsonPath('summary', 'There are 3 published commercial listings in Butuan City. Warehouses have the most listings (3).');
+    }
 }

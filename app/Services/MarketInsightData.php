@@ -94,10 +94,11 @@ class MarketInsightData
         $topBarangay = $byBarangay[0]['listing_count'] ?? 0;
 
         // Ties are listed together, so nothing is called "the most" when it isn't.
+        // With one listing per barangay, no barangay stands out.
         return [
             'most_listed_types' => collect($byType)->where('listing_count', $top)->pluck('property_type')->values()->all(),
             'most_listed_count' => $top,
-            'top_barangays' => collect($byBarangay)->where('listing_count', $topBarangay)->pluck('barangay')->values()->all(),
+            'top_barangays' => $topBarangay < 2 ? [] : collect($byBarangay)->where('listing_count', $topBarangay)->pluck('barangay')->values()->all(),
             'top_barangay_count' => $topBarangay,
         ];
     }
