@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my/inquiries/sent', [InquiryController::class, 'sent']);
     Route::get('/inquiries/{inquiry}/messages', [InquiryController::class, 'messages']);
     Route::post('/inquiries/{inquiry}/messages', [InquiryController::class, 'storeMessage']);
+    Route::post('/inquiries/{inquiry}/suggest-reply', [InquiryController::class, 'suggestReply']);
     Route::get('/my/saved-properties', [SavedPropertyController::class, 'index']);
     Route::post('/my/saved-properties/{property}', [SavedPropertyController::class, 'store']);
     Route::delete('/my/saved-properties/{property}', [SavedPropertyController::class, 'destroy']);
