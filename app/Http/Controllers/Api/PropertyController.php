@@ -18,6 +18,9 @@ use Illuminate\Support\Str;
 
 class PropertyController extends Controller
 {
+    /** Most photos one listing can have. */
+    private const MAX_PHOTOS = 10;
+
     private const PUBLIC_COLUMNS = [
         'id', 'owner_id', 'broker_id', 'title', 'slug', 'property_type',
         'listing_type', 'description', 'price', 'currency', 'address_line',
@@ -254,7 +257,7 @@ class PropertyController extends Controller
     {
         Gate::authorize('create', Property::class);
 
-        $data = $request->validate($this->propertyRules());
+        $data = $request->validate($this->propertyRules(), $this->photoMessages());
         $images = $data['images'] ?? [];
         $submitForReview = (bool) ($data['submit_for_review'] ?? false);
         unset($data['images'], $data['submit_for_review']);
@@ -304,7 +307,7 @@ class PropertyController extends Controller
             'image_order' => ['sometimes', 'array', 'max:30'],
             'image_order.*' => ['integer'],
             'primary_image_id' => ['sometimes', 'nullable', 'integer'],
-        ]);
+        ], $this->photoMessages());
         $images = $data['images'] ?? [];
         $submitForReview = (bool) ($data['submit_for_review'] ?? false);
         $removeIds = array_map('intval', $data['remove_image_ids'] ?? []);
@@ -316,11 +319,16 @@ class PropertyController extends Controller
         foreach ([...$removeIds, ...$imageOrder, ...array_filter([$primaryId])] as $imageId) {
             abort_unless(in_array($imageId, $ownImageIds, true), 422, 'One of the selected photos does not belong to this listing.');
         }
-        if ($removeIds !== [] && count($ownImageIds) - count(array_unique($removeIds)) + count($images) < 1) {
-            return response()->json([
-                'message' => 'Keep at least one photo on the listing.',
-                'errors' => ['images' => ['Keep at least one photo on the listing.']],
-            ], 422);
+        $photoTotal = count($ownImageIds) - count(array_unique($removeIds)) + count($images);
+        if ($removeIds !== [] && $photoTotal < 1) {
+            return $this->photoError('Keep at least one photo on the listing.');
+        }
+        if ($images !== [] && $photoTotal > self::MAX_PHOTOS) {
+            $room = max(0, self::MAX_PHOTOS - (count($ownImageIds) - count(array_unique($removeIds))));
+
+            return $this->photoError($room === 0
+                ? 'A listing can have up to '.self::MAX_PHOTOS.' photos. Remove a photo before adding another.'
+                : 'A listing can have up to '.self::MAX_PHOTOS." photos. You can add {$room} more.");
         }
 
         if (
@@ -469,9 +477,30 @@ class PropertyController extends Controller
                 'sometimes', 'nullable', 'integer', 'min:0', 'max:65535',
             ],
             'submit_for_review' => ['sometimes', 'boolean'],
-            'images' => ['sometimes', 'array', 'max:10'],
+            'images' => ['sometimes', 'array', 'max:'.self::MAX_PHOTOS],
             'images.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
+    }
+
+    /** Plain-language messages for photo upload problems. */
+    private function photoMessages(): array
+    {
+        return [
+            'images.max' => 'You can upload up to '.self::MAX_PHOTOS.' photos at a time.',
+            'images.*.image' => 'Each photo must be a JPG, PNG or WebP image.',
+            'images.*.mimes' => 'Each photo must be a JPG, PNG or WebP image.',
+            'images.*.max' => 'Each photo must be 5 MB or smaller.',
+            'images.*.uploaded' => 'A photo could not be uploaded. It may be larger than 5 MB.',
+        ];
+    }
+
+    private function photoError(string $message): JsonResponse
+    {
+        return response()->json([
+            'message' => $message,
+            'type' => 'validation_error',
+            'errors' => ['images' => [$message]],
+        ], 422);
     }
 
     private function saveImages(Property $property, array $images): void

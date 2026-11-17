@@ -16,7 +16,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class AccountController extends Controller
@@ -29,7 +28,7 @@ class AccountController extends Controller
         $user = $this->activeUser($request);
         $data = $request->validate([
             'current_password' => ['required', 'string'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8), 'different:current_password'],
+            'password' => ['required', 'confirmed', User::passwordRule(), 'different:current_password'],
         ]);
 
         $this->assertPassword($user, $data['current_password'], 'current_password');

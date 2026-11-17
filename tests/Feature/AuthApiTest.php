@@ -18,6 +18,7 @@ class AuthApiTest extends TestCase
             'phone' => '09171234567',
             'password' => 'SecurePass123!',
             'password_confirmation' => 'SecurePass123!',
+            'accept_terms' => true,
         ]);
 
         $response->assertCreated()
@@ -43,6 +44,7 @@ class AuthApiTest extends TestCase
             'email' => 'existing@example.com',
             'password' => 'SecurePass123!',
             'password_confirmation' => 'SecurePass123!',
+            'accept_terms' => true,
         ])->assertUnprocessable();
     }
 
