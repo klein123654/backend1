@@ -21,7 +21,7 @@ class AiDescriptionApiTest extends TestCase
             ->assertOk()
             ->assertExactJson([
                 'success' => false,
-                'message' => 'AI service is not configured yet. Please add DEEPSEEK_API_KEY to .env.',
+                'message' => 'AI features are not available right now.',
             ]);
     }
 }

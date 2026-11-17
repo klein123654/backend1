@@ -30,11 +30,17 @@ class InquiryReplyReceived extends Notification
         $role = $notifiable->role ?? 'buyer';
         $name = $notifiable->name ?? $this->inquiry->name;
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('New reply about '.$title)
             ->greeting('Hello '.$name.',')
             ->line($this->senderName.' replied to your conversation about "'.$title.'":')
-            ->line('"'.Str::limit($this->message->body, 400).'"')
+            ->line('"'.Str::limit($this->message->body, 400).'"');
+
+        if ($this->message->safety_warning) {
+            $mail->line('⚠ Be careful: '.$this->message->safety_warning.' Never send a deposit or reservation fee before you have seen the property and checked the documents.');
+        }
+
+        return $mail
             ->action('Open conversation', FrontendUrl::workspace($role, 'inquiries'))
             ->line('Reply on ButuanSpaces to keep the whole conversation in one place.');
     }

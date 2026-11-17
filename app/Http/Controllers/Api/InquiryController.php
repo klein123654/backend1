@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\InquiryReceived;
 use App\Notifications\InquiryReplyReceived;
 use App\Services\DeepSeekService;
+use App\Services\MessageSafety;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class InquiryController extends Controller
 {
@@ -130,11 +132,11 @@ class InquiryController extends Controller
                 ->with('sender:id,name')
                 ->orderBy('created_at')
                 ->orderBy('id')
-                ->get(['id', 'inquiry_id', 'sender_id', 'body', 'created_at']),
+                ->get(['id', 'inquiry_id', 'sender_id', 'body', 'safety_warning', 'created_at']),
         ]);
     }
 
-    public function storeMessage(Request $request, Inquiry $inquiry): JsonResponse
+    public function storeMessage(Request $request, Inquiry $inquiry, MessageSafety $safety): JsonResponse
     {
         Gate::authorize('view', $inquiry);
         $data = $request->validate([
@@ -145,10 +147,14 @@ class InquiryController extends Controller
         $rateLimitKey = 'inquiry-messages:user:'.$user->id;
         abort_if(RateLimiter::increment($rateLimitKey, 60) > 20, 429, 'You may send up to 20 messages per minute.');
 
-        $message = DB::transaction(function () use ($data, $inquiry, $user) {
+        $body = trim($data['body']);
+        $warning = $safety->check($body);
+
+        $message = DB::transaction(function () use ($body, $warning, $inquiry, $user) {
             $message = $inquiry->messages()->create([
                 'sender_id' => $user->id,
-                'body' => trim($data['body']),
+                'body' => $body,
+                'safety_warning' => $warning,
             ]);
 
             $updates = ['last_message_at' => $message->created_at];
@@ -166,6 +172,56 @@ class InquiryController extends Controller
         return response()->json([
             'data' => $message->load('sender:id,name'),
         ], 201);
+    }
+
+    /**
+     * AI-drafted reply for the publisher to review and edit. Nothing is sent.
+     */
+    public function suggestReply(Request $request, Inquiry $inquiry, DeepSeekService $deepSeek): JsonResponse
+    {
+        Gate::authorize('update', $inquiry);
+        $user = $request->user();
+        abort_if($user->role === 'admin', 403, 'Only the listing publisher can draft replies.');
+        abort_if(RateLimiter::increment('inquiry-reply-drafts:user:'.$user->id, 60) > 10, 429, 'You can draft up to 10 replies per minute.');
+
+        $property = $inquiry->property()->first();
+        $conversation = $inquiry->messages()
+            ->where('is_internal', false)
+            ->latest('id')
+            ->limit(8)
+            ->get(['sender_id', 'body'])
+            ->reverse()
+            ->map(fn ($message): array => [
+                'from' => (int) $message->sender_id === (int) $inquiry->buyer_id ? 'inquirer' : 'publisher',
+                'text' => Str::limit($message->body, 1200),
+            ])
+            ->values()
+            ->all();
+
+        $draft = $deepSeek->suggestReply([
+            'publisher_name' => $user->name,
+            'inquirer_name' => $inquiry->name,
+            'listing' => $property ? array_filter([
+                'title' => $property->title,
+                'property_type' => $property->property_type,
+                'listing_type' => $property->listing_type,
+                'price_php' => (float) $property->price,
+                'price_note' => $property->listing_type === 'rent' ? 'per month' : null,
+                'floor_area_sqm' => $property->floor_area ? (float) $property->floor_area : null,
+                'lot_area_sqm' => $property->lot_area ? (float) $property->lot_area : null,
+                'parking_spaces' => $property->parking_spaces,
+                'address' => trim($property->address_line.', '.$property->barangay.', '.$property->city, ', '),
+                'availability' => $property->availability,
+                'description' => Str::limit((string) $property->description, 1500),
+            ], fn ($value) => $value !== null && $value !== '') : null,
+            'conversation' => $conversation,
+        ]);
+
+        if (! $draft['success']) {
+            return response()->json(['message' => $draft['message'], 'type' => 'ai_unavailable'], 503);
+        }
+
+        return response()->json(['reply' => $draft['reply']]);
     }
 
     /** One reply email per recipient per conversation in this window. */

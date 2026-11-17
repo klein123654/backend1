@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Property;
 use App\Services\DeepSeekService;
+use App\Services\MarketInsightData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 
@@ -16,40 +16,21 @@ class MarketInsightController extends Controller
      */
     public const CACHE_TTL_SECONDS = 6 * 60 * 60;
 
-    public function __invoke(DeepSeekService $deepSeek): JsonResponse
+    public function __invoke(DeepSeekService $deepSeek, MarketInsightData $marketData): JsonResponse
     {
-        $averagePriceByType = Property::query()
-            ->publiclyVisible()
-            ->selectRaw('property_type, AVG(price) AS average_price, COUNT(*) AS listing_count')
-            ->groupBy('property_type')
-            ->orderBy('property_type')
-            ->get()
-            ->map(static fn (Property $property): array => [
-                'property_type' => $property->property_type,
-                'average_price' => (float) $property->getAttribute('average_price'),
-                'listing_count' => (int) $property->getAttribute('listing_count'),
-            ])
-            ->all();
+        $aggregates = $marketData->build();
 
-        $countByLocation = Property::query()
-            ->publiclyVisible()
-            ->selectRaw('city, province, COUNT(*) AS listing_count')
-            ->groupBy('city', 'province')
-            ->orderBy('city')
-            ->orderBy('province')
-            ->get()
-            ->map(static fn (Property $property): array => [
-                'city' => $property->city,
-                'province' => $property->province,
-                'listing_count' => (int) $property->getAttribute('listing_count'),
-            ])
-            ->all();
+        if ($aggregates['total_listings'] < MarketInsightData::MIN_LISTINGS_FOR_SUMMARY) {
+            return response()->json([
+                'success' => true,
+                'aggregates' => $aggregates,
+                'summary' => null,
+                'ai_written' => false,
+                'message' => 'A market summary appears once at least '.MarketInsightData::MIN_LISTINGS_FOR_SUMMARY.' listings are published.',
+            ]);
+        }
 
-        $aggregates = [
-            'average_price_by_type' => $averagePriceByType,
-            'count_by_location' => $countByLocation,
-        ];
-        $cacheKey = 'market-insight:'.md5(json_encode($aggregates, JSON_THROW_ON_ERROR));
+        $cacheKey = 'market-insight:v2:'.md5(json_encode($aggregates, JSON_THROW_ON_ERROR));
         $insight = Cache::get($cacheKey);
 
         if (! is_array($insight)) {
@@ -61,11 +42,14 @@ class MarketInsightController extends Controller
             }
         }
 
+        // Without the AI, still give a correct summary written from the figures.
+        $aiWritten = $insight['success'];
+
         return response()->json([
-            'success' => $insight['success'],
+            'success' => true,
             'aggregates' => $aggregates,
-            'summary' => $insight['summary'],
-            ...isset($insight['message']) ? ['message' => $insight['message']] : [],
+            'summary' => $aiWritten ? $insight['summary'] : $marketData->fallbackSummary($aggregates),
+            'ai_written' => $aiWritten,
         ]);
     }
 }

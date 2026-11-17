@@ -11,7 +11,7 @@ class InquiryMessage extends Model
     use HasFactory;
 
     protected $fillable = [
-        'inquiry_id', 'sender_id', 'body', 'is_internal', 'read_at',
+        'inquiry_id', 'sender_id', 'body', 'is_internal', 'read_at', 'safety_warning',
     ];
 
     protected function casts(): array
