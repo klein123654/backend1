@@ -109,6 +109,7 @@ class AccountSettingsTest extends TestCase
             'email' => 'person@example.test',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
+            'accept_terms' => true,
         ])->assertCreated()->assertJsonPath('user.email_verified', false);
 
         $user = User::where('email', 'person@example.test')->firstOrFail();

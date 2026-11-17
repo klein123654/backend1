@@ -9,7 +9,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
@@ -41,7 +40,10 @@ class AuthController extends Controller
             'role' => ['sometimes', 'in:buyer'],
             'license_number' => ['required_if:role,broker', 'nullable', 'string', 'max:100'],
             'agency_name' => ['nullable', 'string', 'max:255'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+            'password' => ['required', 'confirmed', User::passwordRule()],
+            'accept_terms' => ['accepted'],
+        ], [
+            'accept_terms.accepted' => 'Please agree to the Terms of Use and Privacy Policy to create an account.',
         ]);
 
         // Public registration cannot create administrator accounts.
@@ -53,6 +55,7 @@ class AuthController extends Controller
             'role' => 'buyer',
             'account_status' => 'active',
         ]);
+        $user->acceptTerms();
 
         $this->notifySafely($user, new VerifyEmailAddress);
 
@@ -146,7 +149,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+            'password' => ['required', 'confirmed', User::passwordRule()],
         ]);
 
         $status = Password::reset($data, function (User $user, string $password): void {

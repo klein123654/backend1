@@ -64,6 +64,9 @@ class GoogleAuthController extends Controller
                 'role' => 'buyer',
                 'account_status' => 'active',
             ]);
+            // The Google button is shown with "By continuing, you agree to the
+            // Terms of Use and Privacy Policy", so a new account records it.
+            $user->acceptTerms();
             $created = true;
         }
 

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'phone', 'role', 'account_status', 'contact_phone', 'contact_email', 'messenger_username', 'viber_number'])]
@@ -27,8 +28,24 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /** Password rule shared by registration, password reset and password change. */
+    public static function passwordRule(): Password
+    {
+        return Password::min(8)->letters()->numbers();
+    }
+
+    /** Record agreement to the current Terms of Use and Privacy Policy. */
+    public function acceptTerms(): void
+    {
+        $this->forceFill([
+            'terms_accepted_at' => now(),
+            'terms_version' => config('app.terms_version'),
+        ])->save();
     }
 
     public function isPublisher(): bool

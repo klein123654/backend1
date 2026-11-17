@@ -67,10 +67,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
             }
 
-            if (str_contains($exception->getMessage(), 'storage') || str_contains($exception->getMessage(), 'Supabase') || str_contains($exception->getMessage(), 'bucket')) {
+            // Photo storage failures: the details go to the log, never to the visitor.
+            $isRequestError = $exception instanceof ValidationException
+                || $exception instanceof AuthenticationException
+                || $exception instanceof HttpExceptionInterface;
+            if (! $isRequestError && preg_match('/storage|supabase|bucket|s3/i', $exception->getMessage())) {
                 $status = 500;
                 $type = 'storage_error';
-                $message = 'Image upload failed. Please check the Supabase storage configuration, bucket permissions, and credentials.';
+                $message = 'Your photos could not be uploaded right now. Please try again in a few minutes.';
             }
 
             $payload = [

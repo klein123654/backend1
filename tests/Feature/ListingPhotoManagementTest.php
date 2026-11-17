@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\PropertyImage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\MakesListings;
@@ -69,5 +70,58 @@ class ListingPhotoManagementTest extends TestCase
         $this->patchJson("/api/my/properties/{$listing->id}", ['remove_image_ids' => [$foreign[0]->id]])
             ->assertStatus(422);
         $this->assertModelExists($foreign[0]);
+    }
+
+    private function png(string $name): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent($name, base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        ));
+    }
+
+    public function test_a_listing_cannot_have_more_than_ten_photos(): void
+    {
+        [$owner, $listing] = $this->listingWithPhotos(9);
+        Sanctum::actingAs($owner);
+
+        $this->post("/api/my/properties/{$listing->id}", [
+            '_method' => 'PATCH',
+            'images' => [$this->png('a.png'), $this->png('b.png')],
+        ], ['Accept' => 'application/json'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.images.0', 'A listing can have up to 10 photos. You can add 1 more.');
+        $this->assertSame(9, $listing->images()->count());
+
+        $this->post("/api/my/properties/{$listing->id}", [
+            '_method' => 'PATCH',
+            'images' => [$this->png('a.png')],
+        ], ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame(10, $listing->images()->count());
+    }
+
+    public function test_removing_photos_makes_room_for_new_ones(): void
+    {
+        [$owner, $listing, $images] = $this->listingWithPhotos(10);
+        Sanctum::actingAs($owner);
+
+        $this->post("/api/my/properties/{$listing->id}", [
+            '_method' => 'PATCH',
+            'remove_image_ids' => [$images[0]->id],
+            'images' => [$this->png('a.png')],
+        ], ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame(10, $listing->images()->count());
+    }
+
+    public function test_wrong_photo_type_gets_a_plain_message(): void
+    {
+        [$owner, $listing] = $this->listingWithPhotos(1);
+        Sanctum::actingAs($owner);
+
+        $response = $this->post("/api/my/properties/{$listing->id}", [
+            '_method' => 'PATCH',
+            'images' => [UploadedFile::fake()->createWithContent('notes.txt', 'hello')],
+        ], ['Accept' => 'application/json'])->assertStatus(422);
+
+        $this->assertSame('Each photo must be a JPG, PNG or WebP image.', $response->json('errors')['images.0'][0]);
     }
 }

@@ -55,6 +55,12 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
     // FRONTEND_URL may list several origins (comma-separated) for CORS; links in
     // emails always use the first one.
+    /*
+    | Version (the "Last updated" date) of the Terms of Use and Privacy Policy
+    | that new accounts agree to. Update it when the frontend pages change.
+    */
+    'terms_version' => env('TERMS_VERSION', '2026-11-17'),
+
     'frontend_url' => trim(explode(',', (string) env('FRONTEND_URL', 'http://localhost:5173'))[0]),
 
     /*
