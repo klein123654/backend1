@@ -188,7 +188,42 @@ class AdminController extends Controller
     public function verifications(Request $request): JsonResponse
     {
         return response()->json(['data' => BrokerVerification::with('broker:id,name,email,phone')
-            ->latest()->paginate(50)->items()]);
+            ->latest('updated_at')->paginate(50)->items()]);
+    }
+
+    /**
+     * Record the result of the yearly check that a verified broker's DHSUD
+     * registration is still active. An inactive registration removes the
+     * broker's verification until they submit renewed credentials.
+     */
+    public function recordDhsudCheck(Request $request, BrokerVerification $verification): JsonResponse
+    {
+        abort_unless($verification->status === 'verified', 409, 'Only verified brokers can be re-checked.');
+
+        $data = $request->validate([
+            'result' => ['required', 'in:active,inactive'],
+            'review_notes' => ['nullable', 'required_if:result,inactive', 'string', 'max:5000'],
+        ], [
+            'review_notes.required_if' => 'Explain what was found so the broker knows what to renew.',
+        ]);
+
+        if ($data['result'] === 'active') {
+            $verification->update(['dhsud_checked_at' => now()]);
+        } else {
+            $verification->update([
+                'status' => 'rejected',
+                'review_notes' => $data['review_notes'],
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+                'dhsud_checked_at' => now(),
+            ]);
+
+            if ($verification->broker) {
+                $this->notifySafely($verification->broker, new BrokerVerificationReviewed($verification));
+            }
+        }
+
+        return response()->json(['data' => $verification->fresh()->load('broker:id,name,email,phone')]);
     }
 
     public function decideVerification(Request $request, BrokerVerification $verification): JsonResponse
@@ -202,6 +237,8 @@ class AdminController extends Controller
             ...$data,
             'reviewed_by' => $admin->id,
             'reviewed_at' => now(),
+            // Approving includes checking the DHSUD registration.
+            ...($data['status'] === 'verified' ? ['dhsud_checked_at' => now(), 'expiry_reminder_sent_at' => null] : []),
         ]);
 
         if ($verification->broker) {
@@ -242,11 +279,12 @@ class AdminController extends Controller
                 BrokerVerification::updateOrCreate(
                     ['broker_id' => $application->user_id],
                     [
-                        'license_number' => $application->license_number,
-                        'agency_name' => $application->agency_name,
+                        ...$application->only(BrokerVerification::CREDENTIAL_FIELDS),
                         'status' => 'verified',
                         'reviewed_by' => $admin->id,
                         'reviewed_at' => now(),
+                        'dhsud_checked_at' => now(),
+                        'expiry_reminder_sent_at' => null,
                         'review_notes' => $application->review_notes,
                     ],
                 );

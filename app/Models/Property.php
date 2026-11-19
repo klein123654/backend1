@@ -29,7 +29,17 @@ class Property extends Model
     /** Days after the last confirmation when an unconfirmed listing is hidden from the public. */
     public const HIDE_AFTER_DAYS = 60;
 
-    public const AVAILABILITY_OPTIONS = ['available', 'rented', 'sold'];
+    /** Days a rented or sold listing stays public, marked unavailable, before it is hidden. */
+    public const UNAVAILABLE_VISIBLE_DAYS = 30;
+
+    /** reserved: an offer is being negotiated; the listing still accepts inquiries. */
+    public const AVAILABILITY_OPTIONS = ['available', 'reserved', 'rented', 'sold'];
+
+    /** Availability values that still accept inquiries and need periodic confirmation. */
+    public const OPEN_AVAILABILITY = ['available', 'reserved'];
+
+    /** Availability values of a listing that is no longer on the market. */
+    public const CLOSED_AVAILABILITY = ['rented', 'sold'];
 
     protected static function booted(): void
     {
@@ -53,7 +63,9 @@ class Property extends Model
     }
 
     /**
-     * Listings the public can see: approved, still available, and confirmed recently.
+     * Listings the public can see: approved, and either still on the market and
+     * confirmed within HIDE_AFTER_DAYS, or rented/sold within UNAVAILABLE_VISIBLE_DAYS
+     * (shown marked as unavailable so visitors know it was taken).
      *
      * @param  Builder<Property>  $query
      */
@@ -61,17 +73,45 @@ class Property extends Model
     {
         $query->where('status', 'published')
             ->whereNotNull('published_at')
-            ->where('availability', 'available')
-            ->where('availability_confirmed_at', '>=', now()->subDays(self::HIDE_AFTER_DAYS));
+            ->where(fn (Builder $visible) => $visible
+                ->where(fn (Builder $open) => $open
+                    ->whereIn('availability', self::OPEN_AVAILABILITY)
+                    ->where('availability_confirmed_at', '>=', now()->subDays(self::HIDE_AFTER_DAYS)))
+                ->orWhere(fn (Builder $closed) => $closed
+                    ->whereIn('availability', self::CLOSED_AVAILABILITY)
+                    ->where('availability_confirmed_at', '>=', now()->subDays(self::UNAVAILABLE_VISIBLE_DAYS))));
+    }
+
+    /**
+     * Publicly visible listings that are still on the market (available or reserved).
+     *
+     * @param  Builder<Property>  $query
+     */
+    public function scopeOnMarket(Builder $query): void
+    {
+        $query->publiclyVisible()->whereIn('availability', self::OPEN_AVAILABILITY);
     }
 
     public function isPubliclyVisible(): bool
     {
-        return $this->status === 'published'
-            && $this->published_at !== null
-            && $this->availability === 'available'
-            && $this->availability_confirmed_at !== null
-            && $this->availability_confirmed_at->gte(now()->subDays(self::HIDE_AFTER_DAYS));
+        if ($this->status !== 'published' || $this->published_at === null || $this->availability_confirmed_at === null) {
+            return false;
+        }
+
+        $days = in_array($this->availability, self::CLOSED_AVAILABILITY, true)
+            ? self::UNAVAILABLE_VISIBLE_DAYS
+            : self::HIDE_AFTER_DAYS;
+
+        return in_array($this->availability, self::AVAILABILITY_OPTIONS, true)
+            && $this->availability_confirmed_at->gte(now()->subDays($days));
+    }
+
+    /**
+     * Visible and still accepting inquiries.
+     */
+    public function isOnMarket(): bool
+    {
+        return $this->isPubliclyVisible() && in_array($this->availability, self::OPEN_AVAILABILITY, true);
     }
 
     /**

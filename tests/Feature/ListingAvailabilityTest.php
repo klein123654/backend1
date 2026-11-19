@@ -51,7 +51,7 @@ class ListingAvailabilityTest extends TestCase
         ]);
     }
 
-    public function test_marking_a_listing_rented_hides_it_from_the_public(): void
+    public function test_a_rented_listing_stays_public_marked_unavailable_and_refuses_inquiries(): void
     {
         $owner = $this->makeOwner();
         $listing = $this->makeListing($owner);
@@ -61,7 +61,73 @@ class ListingAvailabilityTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.availability', 'rented');
 
-        $this->getJson('/api/properties/'.$listing->id)->assertNotFound();
+        $this->getJson('/api/properties/'.$listing->id)
+            ->assertOk()
+            ->assertJsonPath('data.availability', 'rented');
+
+        Sanctum::actingAs($this->makeOwner()->forceFill(['role' => 'buyer']));
+        $this->postJson('/api/properties/'.$listing->id.'/inquiries', [
+            'name' => 'Buyer', 'email' => 'buyer@example.test', 'message' => 'Is this still available for lease?',
+        ])->assertStatus(409);
+    }
+
+    public function test_rented_and_sold_listings_are_hidden_after_thirty_days(): void
+    {
+        $owner = $this->makeOwner();
+        $recent = $this->makeListing($owner);
+        $recent->forceFill(['availability' => 'sold', 'availability_confirmed_at' => now()->subDays(Property::UNAVAILABLE_VISIBLE_DAYS - 1)])->save();
+        $old = $this->makeListing($owner);
+        $old->forceFill(['availability' => 'rented', 'availability_confirmed_at' => now()->subDays(Property::UNAVAILABLE_VISIBLE_DAYS + 1)])->save();
+
+        $this->getJson('/api/properties/'.$recent->id)->assertOk();
+        $this->getJson('/api/properties/'.$old->id)->assertNotFound();
+    }
+
+    public function test_reserved_listings_stay_public_and_accept_inquiries(): void
+    {
+        $owner = $this->makeOwner();
+        $listing = $this->makeListing($owner);
+        Sanctum::actingAs($owner);
+
+        $this->patchJson('/api/my/properties/'.$listing->id.'/availability', ['availability' => 'reserved'])
+            ->assertOk()
+            ->assertJsonPath('data.availability', 'reserved');
+
+        Sanctum::actingAs($this->makeOwner()->forceFill(['role' => 'buyer']));
+        $this->getJson('/api/properties/'.$listing->id)->assertOk()->assertJsonPath('data.availability', 'reserved');
+        $this->postJson('/api/properties/'.$listing->id.'/inquiries', [
+            'name' => 'Buyer', 'email' => 'buyer@example.test', 'message' => 'Can I still view it this week?',
+        ])->assertCreated();
+    }
+
+    public function test_listings_can_be_filtered_by_availability(): void
+    {
+        $owner = $this->makeOwner();
+        $available = $this->makeListing($owner);
+        $reserved = $this->makeListing($owner);
+        $reserved->forceFill(['availability' => 'reserved'])->save();
+        $sold = $this->makeListing($owner);
+        $sold->forceFill(['availability' => 'sold'])->save();
+
+        $ids = fn (string $query) => collect($this->getJson('/api/properties'.$query)->assertOk()->json('data'))->pluck('id')->sort()->values()->all();
+
+        $this->assertSame(collect([$available->id, $reserved->id, $sold->id])->sort()->values()->all(), $ids(''));
+        $this->assertSame(collect([$available->id, $reserved->id])->sort()->values()->all(), $ids('?availability=available'));
+        $this->assertSame([$reserved->id], $ids('?availability=reserved'));
+        $this->assertSame([$sold->id], $ids('?availability=unavailable'));
+        $this->getJson('/api/properties?availability=gone')->assertUnprocessable();
+    }
+
+    public function test_reminders_skip_rented_listings(): void
+    {
+        Notification::fake();
+        $owner = $this->makeOwner();
+        $listing = $this->makeListing($owner, Property::REMIND_AFTER_DAYS + 1);
+        $listing->forceFill(['availability' => 'rented', 'availability_confirmed_at' => now()->subDays(5)])->save();
+
+        $this->artisan('listings:send-availability-reminders')->assertSuccessful();
+
+        Notification::assertNothingSentTo($owner);
     }
 
     public function test_only_the_owner_can_change_availability(): void

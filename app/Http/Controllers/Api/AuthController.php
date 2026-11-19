@@ -38,8 +38,6 @@ class AuthController extends Controller
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
             'role' => ['sometimes', 'in:buyer'],
-            'license_number' => ['required_if:role,broker', 'nullable', 'string', 'max:100'],
-            'agency_name' => ['nullable', 'string', 'max:255'],
             'password' => ['required', 'confirmed', User::passwordRule()],
             'accept_terms' => ['accepted'],
         ], [

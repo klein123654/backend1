@@ -20,7 +20,7 @@ class ListingAvailabilityReminders
 
         Property::query()
             ->with('owner')
-            ->publiclyVisible()
+            ->onMarket()
             ->where('availability_confirmed_at', '<=', now()->subDays(Property::REMIND_AFTER_DAYS))
             ->whereNull('availability_reminder_sent_at')
             ->chunkById(100, function ($properties) use (&$sent): void {

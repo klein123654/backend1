@@ -31,6 +31,7 @@ class InquiryController extends Controller
             'Sign in with an active member account to send an inquiry.'
         );
         abort_unless($property->isPubliclyVisible(), 404);
+        abort_unless($property->isOnMarket(), 409, 'This property is no longer available, so it cannot receive new inquiries.');
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -96,7 +97,7 @@ class InquiryController extends Controller
 
         if ($user->role === 'buyer') {
             $query->where('buyer_id', $user->id);
-        } elseif (in_array($user->role, ['owner', 'developer'], true)) {
+        } elseif ($user->role === 'owner') {
             $query->whereHas('property', fn ($builder) => $builder->where('owner_id', $user->id));
         } elseif ($user->role === 'broker') {
             $query->where('assigned_broker_id', $user->id);

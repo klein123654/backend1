@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Property;
+use App\Services\BrokerCredentialReminders;
 use App\Services\ListingAvailabilityReminders;
 use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
@@ -16,8 +17,8 @@ class ListingAvailabilityController extends Controller
      */
     public function confirm(Property $property): RedirectResponse
     {
-        if ($property->availability === 'available') {
-            $property->markAvailabilityConfirmed();
+        if (in_array($property->availability, Property::OPEN_AVAILABILITY, true)) {
+            $property->markAvailabilityConfirmed($property->availability);
             $property->save();
         }
 
@@ -33,11 +34,17 @@ class ListingAvailabilityController extends Controller
      * Daily trigger for the reminder emails, called by a scheduled GitHub
      * Actions workflow with the shared CRON_SECRET.
      */
-    public function sendReminders(Request $request, ListingAvailabilityReminders $reminders): JsonResponse
-    {
+    public function sendReminders(
+        Request $request,
+        ListingAvailabilityReminders $reminders,
+        BrokerCredentialReminders $credentialReminders,
+    ): JsonResponse {
         $secret = (string) config('services.cron.secret');
         abort_if($secret === '' || ! hash_equals($secret, (string) $request->header('X-Cron-Secret')), 403);
 
-        return response()->json(['reminders_sent' => $reminders->sendDue()]);
+        return response()->json([
+            'reminders_sent' => $reminders->sendDue(),
+            'credential_reminders_sent' => $credentialReminders->sendDue(),
+        ]);
     }
 }

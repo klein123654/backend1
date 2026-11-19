@@ -94,6 +94,7 @@ Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(
     Route::delete('/users/{user}', [AdminController::class, 'deleteUser'])->middleware('throttle:20,1');
     Route::get('/verifications', [AdminController::class, 'verifications']);
     Route::patch('/verifications/{verification}', [AdminController::class, 'decideVerification']);
+    Route::post('/verifications/{verification}/dhsud-check', [AdminController::class, 'recordDhsudCheck']);
     Route::get('/publisher-applications', [AdminController::class, 'publisherApplications']);
     Route::patch('/publisher-applications/{application}', [AdminController::class, 'decidePublisherApplication']);
     Route::get('/inquiries', [AdminController::class, 'inquiries']);

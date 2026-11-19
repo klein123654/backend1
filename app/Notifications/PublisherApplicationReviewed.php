@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\PublisherApplication;
+use App\Support\BrokerCredentials;
 use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -35,6 +36,10 @@ class PublisherApplicationReviewed extends Notification
 
         if ($this->application->review_notes) {
             $message->line('Reviewer notes: '.$this->application->review_notes);
+        }
+
+        if ($isApproved && $this->application->requested_role === 'broker') {
+            $message->line(BrokerCredentials::DHSUD_NOTICE);
         }
 
         return $message->action(

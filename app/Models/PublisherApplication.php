@@ -12,13 +12,20 @@ class PublisherApplication extends Model
 
     protected $fillable = [
         'user_id', 'requested_role', 'ownership_type', 'business_name',
-        'license_number', 'agency_name', 'status', 'reviewed_by',
+        'license_number', 'prc_valid_until', 'dhsud_registration_number',
+        'dhsud_valid_until', 'firm_name', 'firm_position', 'firm_address',
+        'firm_registration_number', 'affiliations', 'status', 'reviewed_by',
         'reviewed_at', 'review_notes',
     ];
 
     protected function casts(): array
     {
-        return ['reviewed_at' => 'datetime'];
+        return [
+            'reviewed_at' => 'datetime',
+            'prc_valid_until' => 'date:Y-m-d',
+            'dhsud_valid_until' => 'date:Y-m-d',
+            'affiliations' => 'array',
+        ];
     }
 
     public function applicant(): BelongsTo

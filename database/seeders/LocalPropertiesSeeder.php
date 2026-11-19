@@ -25,15 +25,10 @@ class LocalPropertiesSeeder extends Seeder
         $admin = $this->seedUser('admin@local.test', 'admin', $faker->name());
         $buyer = $this->seedUser('buyer@local.test', 'buyer', $faker->name());
         $owners = [];
-        $developers = [];
         $brokers = [];
 
         for ($number = 1; $number <= 10; $number++) {
             $owners[] = $this->seedUser("owner{$number}@local.test", 'owner', $faker->name());
-        }
-
-        for ($number = 1; $number <= 8; $number++) {
-            $developers[] = $this->seedUser("developer{$number}@local.test", 'developer', $faker->name());
         }
 
         for ($number = 1; $number <= 6; $number++) {
@@ -109,7 +104,7 @@ class LocalPropertiesSeeder extends Seeder
         }
 
         for ($index = 0; $index < 10; $index++) {
-            $roleAssignments[] = ['role' => 'developer', 'user_index' => $index % count($developers)];
+            $roleAssignments[] = ['role' => 'owner', 'user_index' => $index % count($owners)];
         }
 
         for ($index = 1; $index < 10; $index++) {
@@ -137,7 +132,6 @@ class LocalPropertiesSeeder extends Seeder
             $role = $assignment['role'];
             $listingUser = match ($role) {
                 'owner' => $owners[$assignment['user_index']],
-                'developer' => $developers[$assignment['user_index']],
                 'broker' => $brokers[$assignment['user_index']],
             };
             $status = $statuses[$index];
@@ -203,7 +197,7 @@ class LocalPropertiesSeeder extends Seeder
         }
 
         $this->seedSavedProperties($buyer, $properties, $statuses);
-        $this->seedInquiries($buyer, $owners, $developers, $brokers, $admin, $properties, $propertyRoles);
+        $this->seedInquiries($buyer, $owners, $brokers, $admin, $properties, $propertyRoles);
         $this->seedPublisherApplications($buyer, $admin);
         $this->seedBrokerVerifications($brokers, $admin);
         $this->seedReports($buyer, $admin, $properties);
@@ -250,7 +244,6 @@ class LocalPropertiesSeeder extends Seeder
     private function seedInquiries(
         User $buyer,
         array $owners,
-        array $developers,
         array $brokers,
         User $admin,
         array $properties,
@@ -274,7 +267,6 @@ class LocalPropertiesSeeder extends Seeder
             $propertyRole = $propertyRoles[$plan['property_index']];
             $publisher = match ($propertyRole) {
                 'owner' => $owners[0],
-                'developer' => $developers[0],
                 'broker' => $brokers[0],
             };
             $initialMessage = 'Hello, I am interested in '.$property->title.'. Could you share viewing details?';
@@ -317,19 +309,18 @@ class LocalPropertiesSeeder extends Seeder
         $applications = [
             ['requested_role' => 'owner', 'status' => 'pending'],
             ['requested_role' => 'broker', 'status' => 'approved'],
-            ['requested_role' => 'developer', 'status' => 'rejected'],
+            ['requested_role' => 'owner', 'status' => 'rejected'],
         ];
 
         foreach ($applications as $application) {
             $reviewed = $application['status'] !== 'pending';
+            $isBroker = $application['requested_role'] === 'broker';
             PublisherApplication::query()->updateOrCreate(
-                ['user_id' => $buyer->id, 'requested_role' => $application['requested_role']],
+                ['user_id' => $buyer->id, 'requested_role' => $application['requested_role'], 'status' => $application['status']],
                 [
-                    'ownership_type' => $application['requested_role'] === 'owner' ? 'individual' : null,
-                    'business_name' => $application['requested_role'] === 'developer' ? 'Agusan Development Group' : null,
-                    'license_number' => $application['requested_role'] === 'broker' ? 'PRC-LOCAL-0002' : null,
-                    'agency_name' => $application['requested_role'] === 'broker' ? 'Butuan Realty Partners' : null,
-                    'status' => $application['status'],
+                    'ownership_type' => $isBroker ? null : 'company',
+                    'business_name' => $isBroker ? null : 'Agusan Development Group',
+                    ...($isBroker ? $this->brokerCredentials(2) : []),
                     'reviewed_by' => $reviewed ? $admin->id : null,
                     'reviewed_at' => $reviewed ? now()->subDays(2) : null,
                     'review_notes' => $application['status'] === 'rejected'
@@ -340,6 +331,26 @@ class LocalPropertiesSeeder extends Seeder
         }
     }
 
+    /**
+     * Sample broker credentials and firm details for local testing.
+     *
+     * @return array<string, mixed>
+     */
+    private function brokerCredentials(int $number): array
+    {
+        return [
+            'license_number' => 'PRC-LOCAL-'.str_pad((string) $number, 4, '0', STR_PAD_LEFT),
+            'prc_valid_until' => now()->addYears(2)->toDateString(),
+            'dhsud_registration_number' => 'DHSUD-CRG-LOCAL-'.str_pad((string) $number, 4, '0', STR_PAD_LEFT),
+            'dhsud_valid_until' => now()->addMonths(8)->toDateString(),
+            'firm_name' => 'Butuan Realty Partners',
+            'firm_position' => 'Licensed Real Estate Broker',
+            'firm_address' => 'J.C. Aquino Avenue, Butuan City',
+            'firm_registration_number' => null,
+            'affiliations' => ['Butuan Realty Board'],
+        ];
+    }
+
     private function seedBrokerVerifications(array $brokers, User $admin): void
     {
         foreach ([['index' => 0, 'status' => 'verified'], ['index' => 1, 'status' => 'pending']] as $verification) {
@@ -347,8 +358,8 @@ class LocalPropertiesSeeder extends Seeder
             BrokerVerification::query()->updateOrCreate(
                 ['broker_id' => $brokers[$verification['index']]->id],
                 [
-                    'license_number' => 'PRC-LOCAL-'.str_pad((string) ($verification['index'] + 1), 4, '0', STR_PAD_LEFT),
-                    'agency_name' => 'Butuan Realty Partners',
+                    ...$this->brokerCredentials($verification['index'] + 1),
+                    'dhsud_checked_at' => $reviewed ? now()->subDays(3) : null,
                     'document_path' => null,
                     'status' => $verification['status'],
                     'reviewed_by' => $reviewed ? $admin->id : null,

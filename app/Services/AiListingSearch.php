@@ -42,7 +42,7 @@ class AiListingSearch
         $query = Property::query()
             ->select(self::COLUMNS)
             ->with(['images', 'owner:id,name', 'broker:id,name'])
-            ->publiclyVisible();
+            ->onMarket();
 
         $location = $this->text($filters['location'] ?? null);
         if ($location !== '') {
