@@ -17,7 +17,7 @@ class FrontendUrl
      */
     public static function workspace(string $role, string $section): string
     {
-        return in_array($role, ['owner', 'developer', 'broker', 'admin'], true)
+        return in_array($role, ['owner', 'broker', 'admin'], true)
             ? self::to('/'.$role.'/'.$section)
             : self::to('/buyer/inquiries');
     }

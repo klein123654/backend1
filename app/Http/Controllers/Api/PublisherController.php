@@ -10,24 +10,22 @@ use Illuminate\Http\JsonResponse;
 class PublisherController extends Controller
 {
     /**
-     * Public profile page of a verified publisher (owner, developer or broker)
+     * Public profile page of a verified publisher (owner or broker)
      * with the number of listings they currently have live.
      */
     public function show(User $user): JsonResponse
     {
         abort_unless($user->isPublisher() && $user->account_status === 'active', 404);
 
-        $user->load(['brokerVerifications' => fn ($query) => $query
-            ->where('status', 'verified')
-            ->select(['id', 'broker_id', 'license_number', 'agency_name', 'status'])]);
+        $user->load(['brokerVerifications' => PublisherProfile::verifiedCredentials(...)]);
 
         $profile = PublisherProfile::make($user);
-        abort_unless($profile['verified'], 404);
+        abort_unless($profile['approved'], 404);
 
         return response()->json([
             'data' => [
                 ...$profile,
-                'active_listing_count' => $user->ownedProperties()->publiclyVisible()->count(),
+                'active_listing_count' => $user->ownedProperties()->onMarket()->count(),
             ],
         ]);
     }

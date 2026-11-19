@@ -50,7 +50,7 @@ class User extends Authenticatable
 
     public function isPublisher(): bool
     {
-        return in_array($this->role, ['owner', 'developer', 'broker'], true);
+        return in_array($this->role, ['owner', 'broker'], true);
     }
 
     public function ownedProperties(): HasMany

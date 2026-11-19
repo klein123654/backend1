@@ -19,7 +19,7 @@ class MarketInsightData
     public function build(): array
     {
         $listings = Property::query()
-            ->publiclyVisible()
+            ->onMarket()
             ->get(['property_type', 'listing_type', 'price', 'floor_area', 'barangay']);
 
         $byType = $listings->groupBy('property_type')

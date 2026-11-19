@@ -27,6 +27,7 @@ class PropertyController extends Controller
         'barangay', 'city', 'province', 'postal_code', 'latitude', 'longitude',
         'bedrooms', 'bathrooms', 'floor_area', 'lot_area', 'parking_spaces',
         'status', 'published_at', 'created_at', 'updated_at', 'ai_tags',
+        'availability', 'availability_confirmed_at',
     ];
 
     /**
@@ -50,6 +51,8 @@ class PropertyController extends Controller
             'sort' => ['sometimes', 'string', 'in:newest,oldest,price_asc,price_desc'],
             'barangay' => ['sometimes', 'string', 'max:120'],
             'publisher' => ['sometimes', 'integer', 'min:1'],
+            // available: available or reserved; unavailable: recently rented or sold.
+            'availability' => ['sometimes', 'string', 'in:available,reserved,unavailable'],
         ]);
 
         $query = Property::query()
@@ -85,6 +88,13 @@ class PropertyController extends Controller
         if (! empty($filters['barangay'])) {
             $query->whereRaw('LOWER(barangay) = ?', [strtolower(trim($filters['barangay']))]);
         }
+
+        match ($filters['availability'] ?? null) {
+            'available' => $query->whereIn('availability', Property::OPEN_AVAILABILITY),
+            'reserved' => $query->where('availability', 'reserved'),
+            'unavailable' => $query->whereIn('availability', Property::CLOSED_AVAILABILITY),
+            default => null,
+        };
 
         if (isset($filters['publisher'])) {
             $query->where('owner_id', $filters['publisher']);
@@ -183,7 +193,7 @@ class PropertyController extends Controller
     public function barangays(): JsonResponse
     {
         $counts = Property::query()
-            ->publiclyVisible()
+            ->onMarket()
             ->whereNotNull('barangay')
             ->where('barangay', '!=', '')
             ->selectRaw('barangay, COUNT(*) AS listing_count')
@@ -200,8 +210,9 @@ class PropertyController extends Controller
     }
 
     /**
-     * Mark a listing as still available, rented or sold. Rented and sold
-     * listings are hidden from the public; confirming resets the reminder clock.
+     * Mark a listing as available, reserved, rented or sold. Rented and sold
+     * listings stay public, marked unavailable, for Property::UNAVAILABLE_VISIBLE_DAYS
+     * days and stop accepting inquiries; confirming resets the reminder clock.
      */
     public function updateAvailability(Request $request, Property $property): JsonResponse
     {
@@ -215,9 +226,12 @@ class PropertyController extends Controller
         $property->save();
 
         return response()->json([
-            'message' => $data['availability'] === 'available'
-                ? 'Thanks! The listing is marked as still available.'
-                : 'The listing is marked as '.$data['availability'].' and hidden from the public.',
+            'message' => match ($data['availability']) {
+                'available' => 'Thanks! The listing is marked as still available.',
+                'reserved' => 'The listing is marked as reserved. It stays public and can still receive inquiries.',
+                default => 'The listing is marked as '.$data['availability'].'. It stays public, marked unavailable, for '
+                    .Property::UNAVAILABLE_VISIBLE_DAYS.' days and no longer receives inquiries.',
+            },
             'data' => $property->fresh()->load('images'),
         ]);
     }

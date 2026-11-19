@@ -32,7 +32,13 @@ class PublisherDirectoryTest extends TestCase
         BrokerVerification::create([
             'broker_id' => $broker->id,
             'license_number' => 'PRC-0012345',
-            'agency_name' => 'Agusan Realty',
+            'prc_valid_until' => now()->addYears(2)->toDateString(),
+            'dhsud_registration_number' => 'DHSUD-CRG-0099',
+            'dhsud_valid_until' => now()->addMonths(6)->toDateString(),
+            'firm_name' => 'Agusan Realty',
+            'firm_position' => 'Managing Broker',
+            'firm_address' => 'Montilla Blvd, Butuan City',
+            'affiliations' => ['Butuan Realty Board'],
             'status' => 'verified',
         ]);
 
@@ -78,6 +84,12 @@ class PublisherDirectoryTest extends TestCase
             ->assertJsonPath('data.publisher.verified', true)
             ->assertJsonPath('data.publisher.license_number', 'PRC-0012345')
             ->assertJsonPath('data.publisher.agency_name', 'Agusan Realty')
+            ->assertJsonPath('data.publisher.broker.dhsud_registration_number', 'DHSUD-CRG-0099')
+            ->assertJsonPath('data.publisher.broker.credential_status', 'current')
+            ->assertJsonPath('data.publisher.broker.firm.name', 'Agusan Realty')
+            ->assertJsonPath('data.publisher.broker.firm.position', 'Managing Broker')
+            ->assertJsonPath('data.publisher.broker.firm.address', 'Montilla Blvd, Butuan City')
+            ->assertJsonPath('data.publisher.broker.affiliations', ['Butuan Realty Board'])
             ->assertJsonPath('data.publisher.contact.phone', '09171234567')
             ->assertJsonPath('data.publisher.contact.messenger_url', 'https://m.me/agusan.realty')
             ->assertJsonPath('data.publisher.contact.viber_url', 'viber://chat?number=%2B639181234567')
@@ -92,7 +104,8 @@ class PublisherDirectoryTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.publisher.verified', true)
             ->assertJsonPath('data.0.publisher.role_label', 'Property owner')
-            ->assertJsonPath('data.0.publisher.license_number', null);
+            ->assertJsonPath('data.0.publisher.license_number', null)
+            ->assertJsonPath('data.0.publisher.broker', null);
     }
 
     public function test_publisher_profile_shows_verified_broker_and_live_listing_count(): void

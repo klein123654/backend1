@@ -21,7 +21,7 @@ class InquiryPolicy
         return match ($user->role) {
             'admin' => true,
             'buyer' => (int) $inquiry->buyer_id === (int) $user->id,
-            'owner', 'developer' => (int) $property?->owner_id === (int) $user->id,
+            'owner' => (int) $property?->owner_id === (int) $user->id,
             'broker' => (int) $inquiry->assigned_broker_id === (int) $user->id
                 || (int) $property?->broker_id === (int) $user->id,
             default => false,
@@ -39,7 +39,7 @@ class InquiryPolicy
 
         return match ($user->role) {
             'admin' => true,
-            'owner', 'developer' => (int) $inquiry->property()->value('owner_id') === (int) $user->id,
+            'owner' => (int) $inquiry->property()->value('owner_id') === (int) $user->id,
             'broker' => (int) $inquiry->assigned_broker_id === (int) $user->id,
             default => false,
         };
