@@ -66,6 +66,8 @@ Route::post('/ai/search', AiSearchController::class)
     ->middleware('throttle:ai-search');
 Route::post('/ai/describe', AiDescriptionController::class)
     ->middleware('throttle:ai-search');
+Route::post('/ai/suggest-titles', [AiDescriptionController::class, 'titles'])
+    ->middleware('throttle:ai-search');
 Route::get('/ai/market-insight', MarketInsightController::class)
     ->middleware('throttle:ai-search');
 Route::post('/properties/{property}/inquiries', [InquiryController::class, 'store'])
