@@ -292,14 +292,7 @@ class PropertyController extends Controller
             return $property;
         });
 
-        try {
-            $tagResult = $deepSeek->tagProperty($property->title, $property->description);
-            if ($tagResult['success'] && ! empty($tagResult['tags'])) {
-                $property->forceFill(['ai_tags' => $tagResult['tags']])->save();
-            }
-        } catch (\Throwable) {
-            // Tagging is optional and must not prevent property creation.
-        }
+        $this->refreshTags($property, $deepSeek);
 
         return response()->json([
             'message' => $submitForReview ? 'Property submitted for review.' : 'Property saved as a draft.',
@@ -311,7 +304,7 @@ class PropertyController extends Controller
      * Update a property belonging to the authenticated owner. Editing a pending
      * or published listing sends it back to administrator review.
      */
-    public function update(Request $request, Property $property)
+    public function update(Request $request, Property $property, DeepSeekService $deepSeek)
     {
         Gate::authorize('update', $property);
 
@@ -355,6 +348,8 @@ class PropertyController extends Controller
             );
         }
 
+        $textBefore = [$property->title, $property->description];
+
         $property = DB::transaction(function () use ($property, $data, $images, $submitForReview) {
             $property->fill($data);
             $isEditingSubmittedListing = in_array($property->status, ['pending', 'published'], true)
@@ -388,6 +383,11 @@ class PropertyController extends Controller
             app(PropertyImageStorage::class)->arrange($property, $removeIds, $imageOrder, $primaryId);
         }
 
+        // Keep the AI tags in step with the listing text; old tags stay if the AI is unavailable.
+        if ($textBefore !== [$property->title, $property->description]) {
+            $this->refreshTags($property, $deepSeek);
+        }
+
         return response()->json([
             'message' => $property->status === 'pending'
                 ? 'Property updated and sent to an administrator for review.'
@@ -407,6 +407,22 @@ class PropertyController extends Controller
         $imageStorage->deleteListing($property);
 
         return response()->json(['message' => 'Listing deleted.']);
+    }
+
+    /**
+     * Generate AI tags from the listing's title and description. Tagging is
+     * optional and never prevents saving the listing.
+     */
+    private function refreshTags(Property $property, DeepSeekService $deepSeek): void
+    {
+        try {
+            $tagResult = $deepSeek->tagProperty($property->title, (string) $property->description);
+            if ($tagResult['success'] && ! empty($tagResult['tags'])) {
+                $property->forceFill(['ai_tags' => $tagResult['tags']])->save();
+            }
+        } catch (\Throwable) {
+            // Keep the existing tags.
+        }
     }
 
     /**
