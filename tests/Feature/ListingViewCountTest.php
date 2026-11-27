@@ -22,6 +22,7 @@ class ListingViewCountTest extends TestCase
         $this->withHeader('User-Agent', 'facebookexternalhit/1.1')->withServerVariables(['REMOTE_ADDR' => '10.0.0.10'])->getJson("/api/properties/{$listing->id}");
 
         $this->assertSame(2, $listing->fresh()->views_count);
+        $this->assertDatabaseHas('property_view_days', ['property_id' => $listing->id, 'day' => now()->toDateString(), 'views' => 2]);
 
         Sanctum::actingAs($owner);
         $this->getJson("/api/properties/{$listing->id}");

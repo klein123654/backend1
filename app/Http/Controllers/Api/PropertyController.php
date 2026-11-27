@@ -184,6 +184,11 @@ class PropertyController extends Controller
         $visitor = $viewer ? 'user:'.$viewer->id : 'ip:'.hash('sha256', (string) $request->ip());
         if (Cache::add('listing-view:'.$property->id.':'.$visitor, true, 3600)) {
             Property::query()->whereKey($property->id)->increment('views_count');
+            DB::table('property_view_days')->upsert(
+                [['property_id' => $property->id, 'day' => now()->toDateString(), 'views' => 1]],
+                ['property_id', 'day'],
+                ['views' => DB::raw('property_view_days.views + 1')],
+            );
         }
     }
 

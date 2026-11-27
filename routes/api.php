@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AiDescriptionController;
 use App\Http\Controllers\Api\AiSearchController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\InquiryController;
 use App\Http\Controllers\Api\MarketInsightController;
@@ -78,6 +79,9 @@ Route::post('/reports', [ReportController::class, 'global'])
     ->middleware('throttle:5,1');
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/my/dashboard', [DashboardController::class, 'publisher']);
+    Route::post('/my/dashboard/insight', [DashboardController::class, 'publisherInsight'])->middleware('throttle:ai-search');
+    Route::get('/dashboard/market', [DashboardController::class, 'market']);
     Route::get('/my/properties', [PropertyController::class, 'mine']);
     Route::post('/my/properties', [PropertyController::class, 'store']);
     Route::patch('/my/properties/{property}', [PropertyController::class, 'update']);
@@ -87,6 +91,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::middleware(['auth:sanctum', 'can:access-admin'])->prefix('admin')->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    Route::get('/dashboard/overview', [DashboardController::class, 'admin']);
+    Route::post('/dashboard/insight', [DashboardController::class, 'adminInsight'])->middleware('throttle:ai-search');
     Route::get('/properties', [AdminController::class, 'listings']);
     Route::patch('/properties/{property}', [AdminController::class, 'decideListing']);
     Route::patch('/properties/{property}/unpublish', [AdminController::class, 'unpublishListing']);
